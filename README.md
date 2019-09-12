@@ -1,68 +1,56 @@
-# ky
+# Zar
 
-To use Z3 (disabled at the moment), build and install this version of
-Z3: https://github.com/Z3Prover/z3/tree/z3-4.8.1
+An experimental probabilistic programming language (PPL)
 
-##### stack build && stack exec ky-exe programs/test1.ky
+## Prereqs
 
-#### app/
+* GHC 8.6.4
 
-* Main.hs - The main entry point. Contains some code for generating
-  random trees as well as reading in and parsing programs.
+### Optional
 
-#### src/
+To use the Z3 backend (disabled at the moment), build and install: https://github.com/Z3Prover/z3/tree/z3-4.8.1.
 
-* Datatypes.hs - Generic setup for open recursion style data types.
+## Quickstart
 
-* Tree.hs - The tree functor, the type of well-founded trees and
-  operations on them.
+```
+stack build && stack exec zar-exe programs/test1.ky
+```
 
-* ListTree.hs - List representation of trees and operations on them,
-  e.g., converting to and from the standard representation.
+## Directory Structure
 
-* Nat.hs - Open recursion natural numbers.
+### app/
 
-* Cotree.hs - The type of potentially infinite trees as the greatest
-  fixed point of the tree functor, and some operations on them.
+| File | What it does |
+|------|--------------|
+| Main.hs | The main entry point. Contains some code for generating random trees as well as reading and parsing programs |
 
-* Sample.hs - State monad sampling of Cotrees.
+### src/
 
-* Inference.hs - generate histograms and pmfs from samples.
+| File | What it does |
+|------|--------------|
+| Datatypes.hs | Generic set-up for open recursion style data types |
+| Tree.hs      | The tree functor, the type of well-founded trees and operations on them |
+| ListTree.hs  | List representation of trees and operations on them, e.g., converting to and from the standard representation |
+| Nat.hs       | Open recursion natural numbers |
+| Cotree.hs    | Potentially infinite trees as the greatest fixed point of the tree functor |
+| Sample.hs    | State-monad sampling of Cotrees |
+| Inference.hs | Approximate inference via sampling |
+| Sexp.hs      | Typeclass for serializing to s-expression format (e.g., in order to visualize trees using https://bagnalla.github.io/sexp-trees/) |
+| Symtab.hs    | Symbol tables |
+| Util.hs      | Miscellaneous utility functions including debug print |
+| Lang.hs      | Abstract syntax (using GADTs and existential packages in the state); interpretation of commands as tree transformers |
+| Distributions.hs | Primitive distributions (Uniform, Bernoulli, etc.) |
+| Untyped.hs   | Untyped ASTs (typechecked and elaborated to the GADT representation) |
+| Token.hs     | Parser-related stuff |
+| Parser.hs    | Megaparsec parser |
+| Tycheck.hs   | Typechecking / elaboration from untyped to GADT |
 
-* Sexp.hs - Typeclass for serializing stuff to s-expression format
-  (e.g., to visualize trees at
-  https://bagnalla.github.io/sexp-trees/).
+### programs/
 
-* Symtab.hs - Contains a type for string-based identifiers (Id) and an
-  interface for maps from Id to any value type.
-
-* Util.hs - Miscellaneous utility functions including a debug print
-  function.
-
-* Lang.hs - Abstract syntax for the PPL (using GADTs and existential
-  packages in the state) and interpretation of commands as tree
-  transformers.
-
-* Distributions.hs - Primitive distribution constructions. Uniform,
-  Bernoulli, etc.
-
-* Untyped.hs - Untyped abstract syntax to be typechecked and
-  elaborated to the GADT representation after parsing from a file.
-
-* Token.hs - Some things used by the parser.
-
-* Parser.hs - Megaparsec parser.
-
-* Tycheck.hs - Typechecking / elaboration from untyped to GADT.
-
-#### programs/
-
-* test.ky - Example test program.
-
-* bernoulli.ky - For testing the built-in Bernoulli distribution.
-
-* fair_coin.ky - Simulating a fair coin using an unfair one.
-
-* flips.ky - Stochastic domination example from Hsu's thesis.
-
-* tricky_coin.ky - Tricky coin inference example.
+| File | What it does |
+|------|--------------|
+| test.zar      | Simple example program |
+| bernoulli.zar | Tests the built-in Bernoulli distribution |
+| fair_coin.ky  | Simulates a fair coin using an unfair one |
+| flips.ky      | A stochastic domination example from Justin Hsu's thesis |
+| tricky_coin.ky| Tricky coin Bayesian inference |
