@@ -1,0 +1,37 @@
+# 0=J, 1=Q, 2=K
+main:
+  p1 <- 0
+  p2 <- 2
+
+  # p1 is uniform from [J,Q,K]
+  p1 <~ uniform([0, 1, 2] : [int])
+
+  # p2 is uniform from [J,Q,K] - {p1}
+  p2 <~ uniform([0, 1, 2] : [int])
+  # p1 and p2 can't choose the same card
+  observe(~(p1 = p2))
+
+  # initial parameters
+  p1_check <~ bernoulli(1/2)
+  p2_check <~ bernoulli(1/2)
+  p1_call <~ bernoulli(1/2)
+
+  p1_payoff <- 0
+  p2_payoff <- 0
+
+  observe(p1_check)
+  if p1_check:
+    if p2_check:
+      p1_payoff <- 1
+      p2_payoff <- 0 - 1
+    else: # p2 bets
+      if p1_call:
+        p1_payoff <- 2
+	p2_payoff <- 0 - 2
+      else: # p1 folds
+        p1_payoff <- 0 - 1
+	p2_payoff <- 1
+  # p1 bets
+  # ... not implemented ...
+
+  observe(p1_payoff < p2_payoff)
