@@ -257,7 +257,7 @@ tycheckExp p (U.ECall pos e1 args) =
           [U.Exp SourcePos] -> TycheckM m g (SomeExp m g)
     go p [] = tycheckExp p e1
     go p (arg:args) = do
-      SomeExp t e <- tycheckExp p (U.ECall pos e1 args)
+      SomeExp t e <- go p args -- tycheckExp p (U.ECall pos e1 args)
       SomeExp t' arg' <- tycheckExp p arg
       case t of
         TArrow a b ->
