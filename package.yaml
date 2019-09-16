@@ -32,6 +32,8 @@ library:
   - random
   - monad-loops
   - sparse-linear-algebra
+  ghc-options:
+  - -Wall
 
 executables:
   zar-exe:
