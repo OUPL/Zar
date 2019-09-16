@@ -15,6 +15,15 @@ func len(l: [float]) -> float:
 func map(f: float->float, l : [float]) -> [float] :
   destruct (l, []:[float], \x:float. \xs:[float]. f(x) :: map(f, xs))
 
+func drop(n: int, l: [float]) -> [float]:
+  if n = 0 then l else destruct(l, []:[float], \x:float. \xs:[float]. drop(n-1, xs))
+
+func app(l1: [float], l2: [float]) -> [float]:
+  destruct(l1, l2, \x:float. \xs:[float]. x :: app(xs, l2))
+
+func rev(l: [float]) -> [float]:
+  destruct(l, []:[float], \x:float. \xs:[float]. app(rev(xs), x :: []:[float]))
+
 func unifN_rec(n: float, eps:float, start:float) -> [float]:
   if n <= 0.0 then []:[float] else start :: unifN_rec(n-1.0, eps, start+eps)
 
@@ -30,6 +39,9 @@ func pi(vr: float, k: float, vs: [float]) -> float:
 func plant(u: float) -> float:
   u
 
+func within_range(l: [float], vr: float, eps: float) -> bool:
+  destruct(l, true, \v:float. \vs:[float]. vr - eps <= v & v <= vr + eps & within_range(vs, vr, eps))
+
 main:
   vr <- 0.5
 
@@ -42,8 +54,8 @@ main:
     u  <- pi(vr, k, vs)
     dv <- plant(u)
     new_v <- dv + v
-    #observe (i < 10 | 0.4 <= new_v & new_v <= 0.6)
+    #observe (i < 10 | 0.3 <= new_v & new_v <= 0.8)
     v <- new_v
     vs <- new_v :: vs
     i <- i + 1
-  return (k = 0.2)
+  return within_range(drop(5, rev(vs)), vr, 0.05)
