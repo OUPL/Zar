@@ -98,6 +98,7 @@ instance Eq (Val m g a) where
         Nothing -> False
     else False
   VPrim _ == VPrim _ = error "no equality on primitives for now"
+  _ == _ = False
 
 instance Show a => Show (Val m g a) where
   show (VRational v) = "VRational " ++ show v
