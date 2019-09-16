@@ -1,8 +1,0 @@
-# comment
-
-main:
-  if true:
-    x <~ uniform([1, 2, 3] : [int])
-  else:
-    x <~ bernoulli(1/2)
-  y <- 1

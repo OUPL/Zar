@@ -1,8 +1,0 @@
-
-func proj1 (p : (int, int)) -> int :
-  fst(p)
-
-main:
-  p <- (0, 1)
-  x <- proj1(p)
-  y <- snd(p)
