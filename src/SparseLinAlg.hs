@@ -8,8 +8,8 @@ import Data.Sparse.SpVector
 import Numeric.LinearAlgebra.Sparse
 import System.IO.Unsafe (unsafePerformIO)
 
-import LinEq
-import Sexp
+import LinEq (Coeff, Var, Equation(..), remove_term, combine_terms, ltree_of_tree, equations_of_ltree)
+import Sexp 
 import Tree
 import Util (debug, tupleFun)
 
