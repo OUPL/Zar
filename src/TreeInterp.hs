@@ -196,11 +196,15 @@ eval (ECond b e1 e2) st = do
 eval (EPrim x) _ = return $ VPrim x
 
 eval (EUniform e) st = do
-  lbl <- freshLbl
   v <- eval e st
   case v of
     VNil -> error "eval: empty list argument to uniform distribution"
-    _ -> return $ VDist $ uniform lbl $ EVal <$> vlist_list v
+    --note(jgs): Don't generate fresh labels in special case of singleton
+    --lists. This is to address issue #8.
+    VCons v1 VNil -> return $ VDist $ Leaf (EVal v1)
+    _ -> do
+      lbl <- freshLbl
+      return $ VDist $ uniform lbl $ EVal <$> vlist_list v
 
 
 -- | Interp. Commands are interpreted as functions from trees of
@@ -266,7 +270,7 @@ interp (While e c) t =
               b' <- is_true e st'
               return $ if b' then Hole fresh_lbl else Leaf st'
             return $ set_label fresh_lbl t''
-            else
+          else
             return $ Leaf st
     else
       -- Nothing in e depends on randomness so unfold the loop.

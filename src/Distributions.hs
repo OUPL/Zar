@@ -16,7 +16,7 @@ uniform lbl dom =
   where
     n = length dom
     go :: [Tree a] -> Tree a
-    go [] = Hole n -- Shouldn't happen.
+    go [] = error "internal error in Distributions:uniform; please report"
     go [x] = x
     go xs = let m = length xs `div` 2 in
               Split Nothing (go $ take m xs) (go $ drop m xs)

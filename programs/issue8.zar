@@ -1,0 +1,5 @@
+main:
+  p <~ uniform([1]:[int])        
+  x <~ bernoulli(1/2)
+  y <~ bernoulli(1/2)
+  return x
