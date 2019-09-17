@@ -1,10 +1,12 @@
 module ListTree where
 
-import Data.Bifunctor (second)
-import Data.List (nub, sort)
-import Sexp
+--note(jgs): redundant imports
+--import Data.Bifunctor (second)
+--import Data.List (nub, sort)
+--import Sexp
 import Tree
-import Util
+--import Util
+
 
 -- List form of trees.
 type TreeL a = [[Tree a]]

@@ -5,15 +5,12 @@ module Inference
 where
 
 import Control.Monad
-import Data.Bifunctor (bimap, second)
+import Data.Bifunctor (second)
 import Data.List (sum)
 import Data.Maybe (fromMaybe)
-import Data.Typeable
 
 import Classes
-import Lang
-import Tree
-import Util (counts, debug)
+import Util (counts)
 
 -- | Any g with a Sample instance admits sampling based inference.
 

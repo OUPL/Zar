@@ -5,7 +5,6 @@ import Data.Maybe (catMaybes, maybeToList)
 
 import Sexp
 import Tree
-import Util (debug)
 
 -- Boolean-valued trees with mandatory labels at all split nodes.
 data LTree =
@@ -80,7 +79,7 @@ equations_of_ltree _ = []
 lookup_term :: Maybe Var -> [Term] -> Maybe Coeff
 lookup_term (Just x) ((c, Just y) : terms) =
   if x == y then Just c else lookup_term (Just x) terms
-lookup_term Nothing ((c, Nothing) : terms) = Just c
+lookup_term Nothing ((c, Nothing) : _) = Just c
 lookup_term x (_ : terms) = lookup_term x terms
 lookup_term _ [] = Nothing
 
@@ -94,7 +93,7 @@ remove_term = go []
     go acc (Just x) (tm@(c, Just y) : terms) =
       if x == y then Just (c, acc ++ terms)
       else go (tm:acc) (Just x) terms
-    go acc Nothing (tm@(c, Nothing) : terms) = Just (c, acc ++ terms)
+    go acc Nothing ((c, Nothing) : terms) = Just (c, acc ++ terms)
     go acc x (tm : terms) = go (tm:acc) x terms
     go _ _ [] = Nothing
 
@@ -132,6 +131,8 @@ solve_equations :: [Equation] -> Equation
 solve_equations = go . sort
   where
     go :: [Equation] -> Equation
+
+    go [] = error "internal error in LinEq:solve_equations" --note(jgs): fix
     go [eq] = simplify_equation eq
     go (Equation (x, terms) : eqs) =
       go $ simplify_equation . subst_equation x terms <$> eqs

@@ -1,3 +1,4 @@
+
 {-# LANGUAGE DeriveFoldable, DeriveFunctor, DeriveTraversable, TupleSections #-}
 {-# LANGUAGE StandaloneDeriving, DeriveAnyClass #-}
 
@@ -5,10 +6,9 @@ module Tree where
 
 import Control.Monad
 import Data.Bifunctor
-import Data.List (nub, sort, (\\))
+import Data.List (nub)
 import Data.Maybe (fromMaybe)
 
-import Classes
 import Datatypes
 import Sexp
 import Util
@@ -182,7 +182,7 @@ reduce_whole (Split (Just lbl) t1 t2) =
     if all (== lbl) hs then
       case ls of
         [] -> error "reduce_hole: no leaves or outgoing holes"
-        (x:xs) | allEq ls -> (Leaf x, (lbl, Leaf x) : ps)
+        (x:_) | allEq ls -> (Leaf x, (lbl, Leaf x) : ps) --note(jgs): We ignore 'xs' here?
         _ -> (Split (Just lbl) t1' t2', ps)
     else
       (Split (Just lbl) t1' t2', ps)
@@ -293,8 +293,11 @@ compatible_for_swap :: Eq a => Tree a -> Path -> Path -> Bool
 compatible_for_swap t p1 p2 =
   let t1 = get_subtree p1 t
       t2 = get_subtree p2 t
-      t1_labels = path_labels p1 t
-      t2_labels = path_labels p2 t in
+      --t1_labels = path_labels p1 t    
+      --t2_labels = path_labels p2 t in
+      --note(jgs): is this right?
+      t1_labels = path_labels p1 t1    
+      t2_labels = path_labels p2 t2 in 
     setEq t1_labels t2_labels
 
 -- compatible_for_swap :: Eq a => Tree a -> Path -> Path -> Bool
@@ -309,12 +312,12 @@ group_dupes :: Eq a => Tree a -> Tree a
 group_dupes t = foldl f t [0 .. depth t]
   where
     f :: Eq a => Tree a -> Int -> Tree a
-    f t n =
-      let subtrees = at_depth t n in
-        if length subtrees <= 2 then t else
+    f t0 n =
+      let subtrees = at_depth t0 n in
+        if length subtrees <= 2 then t0 else
           case dupes [] subtrees of
-            Just (p1, p2) -> swap_subtrees (sibling_path p1) p2 t
-            Nothing -> t
+            Just (p1, p2) -> swap_subtrees (sibling_path p1) p2 t0
+            Nothing -> t0
     dupes :: Eq a => [(Tree a, Path)] -> [(Tree a, Path)] -> Maybe (Path, Path)
     dupes _ [] = Nothing
     dupes seen ((t', p):rest) = case lookup t' seen of
@@ -340,8 +343,9 @@ swap_subtrees p1 p2 t =
 canon :: (Eq a, Show a) => Tree a -> Tree a
 canon t =
   let
-    (t1, ps) = reduce_whole t
-    t2 = apply_patches ps t1
+    -- note(jgs):
+    -- (t1, ps) = reduce_whole t
+    -- t2 = apply_patches ps t1
     t3 = group_dupes t -- TODO: fix
     (t4, ps') = reduce t3
     t5 = apply_patches ps' t4
@@ -363,8 +367,8 @@ expand t = go t t
   where
     go :: Tree a -> Tree a -> Tree a
     go _ (Leaf x) = Leaf x
-    go t (Split n t1 t2) = Split n (go t t1) (go t t2)
-    go t (Hole _) = t
+    go t0 (Split n t1 t2) = Split n (go t0 t1) (go t0 t2)
+    go t0 (Hole _) = t0
 
 -- Check if a tree is in canonical form (not necessarily the case that
 -- canon would have no effect).

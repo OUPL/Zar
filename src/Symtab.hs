@@ -1,3 +1,4 @@
+
 -- | This module defines a type for identifiers along with an abstract
 -- datatype for maps indexed by them.
 
@@ -16,14 +17,6 @@ import qualified Data.Map as Map
 newtype Id = Id { unId :: String }
   deriving (Eq, Ord)
 
-intToId :: Int -> Id
-intToId 0 = Id "a"
-intToId 1 = Id "b"
-intToId _ = Id "c"
-
--- instance Arbitrary Id where
---   arbitrary = intToId <$> choose (0, 2)
-
 assocGet :: Id -> [(Id, a)] -> Maybe a
 assocGet _ [] = Nothing
 assocGet x ((y, v) : ys) = if x == y then Just v else assocGet x ys
@@ -36,14 +29,14 @@ assocSet nm x ((nm', x'):ys) =
 
 -- Update the value associated with an Id.
 assocUpdate :: Id -> (a -> a) -> [(Id, a)] -> [(Id, a)]
-assocUpdate nm f [] = error $ "assocUpdate: " ++ show nm ++ " not found"
+assocUpdate nm _ [] = error $ "assocUpdate: " ++ show nm ++ " not found"
 assocUpdate nm f ((nm', x):ys) =
   if nm == nm' then (nm, f x) : ys else (nm', x) : assocUpdate nm f ys
 
 assocIndex :: Id -> [(Id, a)] -> Maybe Int
 assocIndex nm ((x, _):xs) =
   if nm == x then Just 0 else (+ 1) <$> assocIndex nm xs
-assocIndex nm [] = Nothing
+assocIndex _ [] = Nothing
 
 -- A Symtab maps Ids to values of some type
 type Symtab a = Map.Map Id a

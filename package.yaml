@@ -33,7 +33,14 @@ library:
   - monad-loops
   - sparse-linear-algebra
   ghc-options:
-  - -Wall
+  - -Wunused-imports
+  - -Wname-shadowing
+  - -Wincomplete-patterns
+  - -Wtype-defaults
+  - -Wunused-local-binds
+  - -Wunused-matches
+  - -Wunused-top-binds
+  - -Werror
 
 executables:
   zar-exe:

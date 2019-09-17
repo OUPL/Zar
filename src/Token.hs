@@ -1,7 +1,6 @@
 module Token where
 
 import Control.Monad (void)
-import Control.Monad.Combinators.Expr -- from parser-combinators
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char

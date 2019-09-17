@@ -4,20 +4,16 @@
 
 module TreeRepr () where
 
-import Data.Proxy
-
 import           Classes
 import           Distributions
 import           TreeInterp
-import           Lang hiding (Env, Exp, SomeVal, SomeTypeVal, Val)
-import qualified Lang as L (Env, Exp, SomeVal, SomeTypeVal(..), Val)
+import           Lang hiding (Exp, SomeTypeVal, Val)
+import qualified Lang as L (Exp, SomeTypeVal(..), Val)
 import           LinEq (infer')
 import           Sample
 import           Tree
 
-type Env         = L.Env         InterpM Tree
 type Exp         = L.Exp         InterpM Tree
-type SomeVal     = L.SomeVal     InterpM Tree
 type SomeTypeVal = L.SomeTypeVal InterpM Tree
 type Val         = L.Val         InterpM Tree
 

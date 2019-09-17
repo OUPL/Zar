@@ -12,7 +12,6 @@ import           Data.Maybe (fromMaybe)
 import           Data.Typeable
 import           System.Random
 
-import           Classes
 import           Lang hiding (Com, Env, Exp, St, Val, interp)
 import qualified Lang (Com, Env, Exp, St, Val)
 
@@ -42,8 +41,11 @@ eval env (EVar x) st =
 eval env (EUnop u e) st =
   case (u, eval env e st) of
     (UNot, VBool b)   -> VBool $ not b
+    (UNot, _)         -> error "IOInterp:eval: ill-typed UNot"
     (UFst, VPair x _) -> x
+    (UFst, _)         -> error "IOInterp:eval: ill-typed UFst"
     (USnd, VPair _ y) -> y
+    (USnd, _)         -> error "IOInterp:eval: ill-typed USnd"
 
 eval env (EBinop b e1 e2) st =
   case (b, eval env e1 st, eval env e2 st) of
@@ -62,6 +64,7 @@ eval env (EBinop b e1 e2) st =
     (BLt,    VRational r1, VRational r2) -> VBool     $ r1 < r2
     (BLt,    VInteger i1,  VInteger i2)  -> VBool     $ i1 < i2
     (BLt,    VFloat f1,    VFloat f2)    -> VBool     $ f1 < f2
+    (_,      _,            _           ) -> error "IOInterp:eval: ill-typed EBinop"
 
 eval env (EPair e1 e2) st = VPair (eval env e1 st) (eval env e2 st)
 

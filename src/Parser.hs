@@ -1,10 +1,7 @@
 module Parser where
 
-import Control.Monad (void)
-
 import Control.Monad.Combinators.Expr -- from parser-combinators
 import qualified Data.List.NonEmpty as NonEmpty
-import Data.Maybe (fromMaybe)
 import Data.Ratio
 import Data.Set (singleton)
 import Data.Void
@@ -15,7 +12,6 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Untyped
 import Symtab (Id(..))
 import Token
-import Util (debug)
 
 
 parens :: Parser a -> Parser a
@@ -41,7 +37,7 @@ bool = choice
 rational :: Parser Rational
 rational = do
   num <- integer
-  symbol "/"
+  _ <- symbol "/"
   denom <- integer
   return $ num % denom
 
@@ -369,12 +365,12 @@ dist = L.indentBlock scn $ do
   keyword "dist"
   dist_nm <- ident
   args <- parens $ commaSep func_arg
-  dist_ty <- symbol "->" >> ty
+  dty <- symbol "->" >> ty
   symbol ":"
   return $ L.IndentSome Nothing
     (\coms ->
        return $ Dist { dist_name = dist_nm
-                     , dist_type = dist_ty
+                     , dist_type = dty
                      , dist_args = args
                      , dist_body = mkSeq coms })
     com
@@ -390,9 +386,9 @@ prog = L.nonIndented scn (L.indentBlock scn p)
   where      
     p = do
       funcs_dists <- many $ choice [Left <$> func, Right <$> dist]
-      com <- main
+      c <- main
       eof
-      return $ L.IndentNone (funcs_dists, com)
+      return $ L.IndentNone (funcs_dists, c)
 
 
 -- Main parsing function called from the outside.

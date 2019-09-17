@@ -22,19 +22,11 @@
 
 module Lang where
 
-import Control.Monad.Identity
-import Control.Monad.Reader
-import Control.Monad.State hiding (get)
-import qualified Control.Monad.State as S (get)
-
-import Data.Bifunctor (first)
 import Data.Proxy
 import Data.Typeable
 
 import Classes
-import Distributions
 import Symtab (Id(..))
-import Util (debug, mapJoin)
 
 -- Dummy instances for arrow type indices.
 instance Eq (a -> b) where
@@ -273,7 +265,7 @@ instance Eq (Exp m g a) where
   ENil == ENil = True
   EUniform e1 == EUniform e2 = e1 == e2
   -- TODO finish
-  _ == _ = False
+  _ == _ = error "internal error in Lang:Eq (Exp ...)"
 
 -- instance Show a => Show (Exp m g a) where
 --   show (EVal v) = "(EVal " ++ show v ++ ")"
@@ -299,6 +291,7 @@ instance Show a => Show (Exp m g a) where
   show (EUnop u e) = "EUnop " ++ show u ++ " " ++ show e
   show (EBinop b e1 e2) =
     "EBinop " ++ show b ++ " " ++ show e1 ++ " " ++ show e2
+  show (EPair e1 e2) = "EPair " ++ show e1 ++ " " ++ show e2
   show ENil = "ENil"
   show (ECons e1 e2) = "ECons " ++ show e1 ++ " " ++ show e2
   show (EDestruct l z f) = -- "(EDestruct " ++ show l ++ " " ++ show z ++ ")"
@@ -308,7 +301,7 @@ instance Show a => Show (Exp m g a) where
   show (ECom _ c) = "ECom " ++ show c
   show (ECond b e1 e2) =
     "ECond " ++ show b ++ " " ++ show e1 ++ " " ++ show e2
-  show (EPrim f) = "EPrim"
+  show (EPrim _) = "EPrim"
   show (EUniform l) = "EUniform " ++ show l
 
 
@@ -378,7 +371,8 @@ fvs = go []
     go bound (EDestruct l z f) = go bound l ++ go bound z ++ go bound f
     go bound (EApp e1 e2) = go bound e1 ++ go bound e2
     go bound (ELam x body) = go (SomeName x : bound) body
-    go bound (ECom args com) =
+    --note(jgs): fvs(ECom _ com) ignores com?
+    go bound (ECom args _) =
       concatMap (\(SomeNameExp _ e) -> go bound e) args
     go bound (ECond b e1 e2) = go bound b ++ go bound e1 ++ go bound e2
     go _ _ = []
@@ -462,14 +456,17 @@ vlist_nth n (VCons hd tl)
   | n < 0 = error "vlist_nth: negative index"
   | n == 0 = hd
   | otherwise = vlist_nth (n-1) tl
+vlist_nth _ _ = error "internal error in Lang:vlist_nth; please report"
 
 vlist_length :: Val m g [a] -> Int
 vlist_length VNil = 0
 vlist_length (VCons _ tl) = 1 + vlist_length tl
+vlist_length _ = error "internal error in Lang:vlist_length; please report"
 
 vlist_list :: Val m g [a] -> [Val m g a]
 vlist_list VNil = []
 vlist_list (VCons x xs) = x : vlist_list xs
+vlist_list _ = error "internal error in Lang:vlist_list; please report"
 
 
 ------------------------------------------------------------------------
@@ -482,5 +479,5 @@ class (Typeable m, AllF g) => Repr m g | g -> m where
 
 -- Initial environment containing primitives.
 initEnv :: Repr m g => Env m g
-initEnv = (\(x, SomeTypeVal t v) ->
+initEnv = (\(x, SomeTypeVal _ v) ->
              SomeNameExp (x, Proxy) (EVal v)) <$> primitives

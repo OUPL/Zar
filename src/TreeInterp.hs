@@ -19,7 +19,6 @@ import           Dep
 import           Distributions
 import           Lang hiding (Com, Exp, St, Val, interp)
 import qualified Lang (Com, Exp, St, Val)
-import           Sexp
 import           Tree
 import           Util
 
@@ -51,11 +50,12 @@ instance MonadReader InterpEnv InterpM where
 runInterpM :: InterpEnv -> InterpState -> InterpM a -> (a, InterpState)
 runInterpM env s (InterpM f) = runIdentity $ runStateT (runReaderT f env) s
 
-evalInterpM :: InterpEnv -> InterpState -> InterpM a -> a
-evalInterpM env s f = fst $ runInterpM env s f
+--note(jgs): unused
+-- evalInterpM :: InterpEnv -> InterpState -> InterpM a -> a
+-- evalInterpM env s f = fst $ runInterpM env s f
 
-execInterpM :: InterpEnv -> InterpState -> InterpM a -> InterpState
-execInterpM env s f = snd $ runInterpM env s f
+-- execInterpM :: InterpEnv -> InterpState -> InterpM a -> InterpState
+-- execInterpM env s f = snd $ runInterpM env s f
 
 
 -- Set up type synonyms.
@@ -92,7 +92,7 @@ eval (EVar x) st =
       case envGet x env of
         Just e -> eval e st
         Nothing ->
-          let (x', proxy) = x
+          let (_, proxy) = x
               ty = typeOf proxy in
             error $ "eval: unbound variable: " ++ show x
             ++ " of type " ++ show ty ++ ".\nst: " ++ show st
@@ -178,7 +178,7 @@ eval (EApp f e) st = do
   v <- eval e st
   case f' of
     VLam x body -> eval (subst x (EVal v) body) st
-    VPrim f -> f v >>= flip eval st
+    VPrim f0 -> f0 v >>= flip eval st
 
 eval (ECom args com) st = do
   st' <- mapM (\(SomeNameExp x e) -> SomeNameVal x <$> eval e st) args

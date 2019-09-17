@@ -1,12 +1,11 @@
 module SparseLinAlg (solve_tree) where
 
-import Data.Bifunctor (bimap, second)
+import Data.Bifunctor (bimap)
 import Data.List (sort)
 import Data.Maybe (fromJust)
 import Data.Sparse.SpMatrix
 import Data.Sparse.SpVector
 import Numeric.LinearAlgebra.Sparse
-import System.IO.Unsafe (unsafePerformIO)
 
 import LinEq (Coeff, Var, Equation(..), remove_term, combine_terms, ltree_of_tree, equations_of_ltree)
 import Sexp 
@@ -34,7 +33,7 @@ mateq_of_equation (Equation (x, tms)) =
 constraint_matrix :: [MatEq] -> SpMatrix Rational
 constraint_matrix eqs =
   let l = concat $ f <$> zip [0..] eqs in
-    debug ("l: " ++ show ((\(x, y, z) -> (x, y, fromRational z)) <$> l)) $
+    debug ("l: " ++ show ((\(x, y, z) -> (x, y, fromRational z :: Double)) <$> l)) $
     fromListSM (n, n) l
   where
     n = length eqs
@@ -77,8 +76,8 @@ solve_system_gmres mat rhs =
   -- let _ = unsafePerformIO $ prd mat in
   -- mat <\> (fromListDenseSV n )
   mat <\> rhs
-  where
-    n = nrows mat -- should also be the length of the rhs vector
+  -- where
+  --   n = nrows mat -- should also be the length of the rhs vector
 
 solve_tree :: Tree Bool -> IO (SpVector Double)
 -- solve_tree = solve_system_gmres . tree_constraint_matrix

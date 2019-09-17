@@ -94,7 +94,6 @@ data Com a =
   | CIte a (Exp a) (Com a) (Maybe (Com a))
   | CReturn a (Exp a)
   -- Derived commands:
-  | CFlip a (Com a) (Com a)
   | CObserve a (Exp a)
   | CWhile a (Exp a) (Com a)
   deriving Show
@@ -104,8 +103,11 @@ data_of_exp (ELit x _) = x
 data_of_exp (EVar x _) = x
 data_of_exp (EUnop x _ _) = x
 data_of_exp (EBinop x _ _ _) = x
+data_of_exp (ELam x _ _ _) = x
 data_of_exp (ECall x _ _) = x
-data_of_exp (ENil x _ ) = x
+data_of_exp (ENil x _) = x
+data_of_exp (EDestruct x _ _ _) = x
+data_of_exp (ECond x _ _ _) = x
 
 data_of_com :: Com a -> a
 data_of_com (CSkip x) = x
@@ -115,7 +117,6 @@ data_of_com (CSample x _ _) = x
 data_of_com (CSeq x _ _) = x
 data_of_com (CIte x _ _ _) = x
 data_of_com (CReturn x _) = x
-data_of_com (CFlip x _ _) = x
 data_of_com (CObserve x _) = x
 data_of_com (CWhile x _ _) = x
 
@@ -168,9 +169,9 @@ instance ToSexp (Exp a) where
   toSexp (ECall _ e es) = "(ECall " ++ toSexp e ++ " " ++ toSexp es ++ ")"
   toSexp (ENil _ t) = "(ENil " ++ toSexp t ++ ")"
   toSexp (EDestruct _ e1 e2 e3) =
-    "(EDestruct " ++ toSexp e1 ++ " " ++ toSexp e2 ++ " " ++ toSexp e2 ++ ")"
+    "(EDestruct " ++ toSexp e1 ++ " " ++ toSexp e2 ++ " " ++ toSexp e3 ++ ")"
   toSexp (ECond _ e1 e2 e3) =
-    "(ECond " ++ toSexp e1 ++ " " ++ toSexp e2 ++ " " ++ toSexp e2 ++ ")"
+    "(ECond " ++ toSexp e1 ++ " " ++ toSexp e2 ++ " " ++ toSexp e3 ++ ")"
 
 instance ToSexp (Com a) where
   toSexp (CSkip _) = "CSkip"
@@ -180,7 +181,6 @@ instance ToSexp (Com a) where
   toSexp (CSeq _ c1 c2) = "(CSeq " ++ toSexp c1 ++ " " ++ toSexp c2 ++ ")"
   toSexp (CIte _ e c1 c2) =
     "(CIte " ++ toSexp e ++ " " ++ toSexp c1 ++ " " ++ toSexp c2 ++ ")"
-  toSexp (CFlip _ c1 c2) = "(CSeq " ++ toSexp c1 ++ " " ++ toSexp c2 ++ ")"
   toSexp (CObserve _ e) = "(CObserve " ++ toSexp e ++ ")"
   toSexp (CReturn _ e) = "(CReturn " ++ toSexp e ++ ")"
   toSexp (CWhile _ e c) = "(CWhile " ++ toSexp e ++ " " ++ toSexp c ++ ")"

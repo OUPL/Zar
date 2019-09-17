@@ -3,15 +3,9 @@
 
 module Cotree where
 
-import Data.List (sortBy)
-import Data.Maybe (fromMaybe)
-
 import Datatypes
-import ListTree
-import Nat
 import Sexp
 import Tree
-import Util
 
 -- | Greatest fixed point / final TreeF-coalgebra
 type Cotree a = Fix (TreeF a)

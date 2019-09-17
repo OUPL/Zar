@@ -8,7 +8,6 @@ import Data.List (intersect, nub, union)
 import Data.Maybe (fromJust, fromMaybe)
 import Lang
 import Symtab (Id(..))
-import Util (debug)
 
 -- Compute dependencies of variables in a command (possibly a sequence
 -- of commands).
@@ -35,7 +34,7 @@ init_deps (Assign (x, _) e) = [(Id x, id_of_name <$> fvs e)]
 init_deps (Sample (x, _) e) = [(Id x, id_of_name <$> fvs e)]
 init_deps (Seq c1 c2) = union_deps (init_deps c1) (init_deps c2)
 init_deps (Ite _ c1 c2) = union_deps (init_deps c1) (init_deps c2)
-init_deps (While e c) = init_deps c
+init_deps (While _ c) = init_deps c
 init_deps _ = []
 
 -- Compute transitive closure (iterate until fixed point).
@@ -45,12 +44,12 @@ iter_deps deps =
   where
     deps' = f deps (fst <$> deps)
     f :: [(Id, [Id])] -> [Id] -> [(Id, [Id])]
-    f deps (x:xs) =
-      let ys = fromJust $ lookup x deps
-          ys_deps = nub $ concat $ fromMaybe [] . flip lookup deps <$> ys
+    f deps0 (x:xs) =
+      let ys = fromJust $ lookup x deps0
+          ys_deps = nub $ concat $ fromMaybe [] . flip lookup deps0 <$> ys
       in
-        f (upd_deps x (union ys_deps) deps) xs
-    f deps [] = deps
+        f (upd_deps x (union ys_deps) deps0) xs
+    f deps0 [] = deps0
 
 
 -- Collect variables that are directly assigned random values.

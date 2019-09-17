@@ -1,7 +1,6 @@
 module Distributions where
 
 import Data.Ratio
-import Data.Typeable
 
 -- import Lang
 import Tree

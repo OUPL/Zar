@@ -85,7 +85,7 @@ mcmc_sample cz@(ct, ws) n = cata alg ct
                                 s <- mcmc_sample (zipUp cz) (n - 1)
                                 return (x:s)
                         Nothing -> error "mcmc_sample: out of bits"
-        alg (SplitF s1 s2) = do
+        alg (SplitF _ _) = do
             case ws of
                 [] -> do
                     bit <- gets headMaybe

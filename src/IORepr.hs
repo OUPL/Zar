@@ -6,17 +6,14 @@
 module IORepr (primitives) where
 
 import Control.Monad.Identity
-import Data.Proxy
 import System.Random
 
 import           Classes
 import           IOInterp
 import           Lang hiding (Env, Exp, SomeVal, SomeTypeVal, Val)
-import qualified Lang as L (Env, Exp, SomeVal, SomeTypeVal(..), Val)
+import qualified Lang as L (Exp, SomeTypeVal(..), Val)
 
-type Env         = L.Env         Identity IO
 type Exp         = L.Exp         Identity IO
-type SomeVal     = L.SomeVal     Identity IO
 type SomeTypeVal = L.SomeTypeVal Identity IO
 type Val         = L.Val         Identity IO
 
@@ -45,7 +42,7 @@ bernoulli_prim = VPrim f
 
 -- IO actions are never equal.
 instance Eq a => Eq (IO a) where
-  f == g = False
+  _ == _ = False
 -- Trivial show instance.
 instance Show a => Show (IO a) where
   show _ = "IO"

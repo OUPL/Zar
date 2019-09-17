@@ -37,11 +37,11 @@ classify :: Eq a => [a] -> [[a]]
 classify = classifyBy (==)
 
 classifyBy :: (a -> a -> Bool) -> [a] -> [[a]]
-classifyBy (==) []     = []
-classifyBy (==) (x:xs) = (x:filter (== x) xs)
-                       : classifyBy (==) (filter (/= x) xs)
+classifyBy _ []     = []
+classifyBy eq (x:xs) = (x:filter (eq x) xs)
+                       : classifyBy eq (filter (neq x) xs)
   where
-  x /= y = not (x == y)
+  neq x1 x2 = not (eq x1 x2)
 
 counts :: Eq a => [a] -> [(a,Int)]
 counts = map headLength . classify

@@ -1,3 +1,4 @@
+
 {-# LANGUAGE GADTs, RankNTypes, StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE KindSignatures #-}
@@ -16,14 +17,12 @@ import Text.Megaparsec (SourcePos)
 import Text.Megaparsec.Error
 
 
-import           Classes
 import           Lang as L hiding (SomeExp, SomeNameExp, SomeVal)
-import qualified Lang as L (SomeNameExp(..), SomeVal(..))
+import qualified Lang as L (SomeNameExp(..))
 import           Parser (parse)
 import           Symtab (Id(..), Symtab)
-import qualified Symtab as S (add, empty, get, fromList)
+import qualified Symtab as S (add, get, fromList)
 import qualified Untyped as U
-import           Util (debug)
 
 data SomeExp m g where
   SomeExp :: forall m g a. (Repr m g, Eq a, Show a, Typeable a) =>
@@ -96,6 +95,11 @@ val_of_lit (U.LRational r) = SomeTypeVal TRational $ L.VRational r
 val_of_lit (U.LFloat f) = SomeTypeVal TFloat $ L.VFloat f
 val_of_lit (U.LBool b) = SomeTypeVal TBool $ L.VBool b
 val_of_lit (U.LInteger i) = SomeTypeVal TInteger $ L.VInteger i
+val_of_lit (U.LPair _ _) = error "internal error: LPair unimplemented in Tycheck:val_of_lit"
+--note(jgs): fix
+  {-let SomeTypeVal t1 v1 = val_of_lit l1
+      SomeTypeVal t2 v2 = val_of_lit l2
+  in SomeTypeVal (TPair t1 t2) (VPair v1 v2)-}
 
 
 -- It seems like this shouldn't be necessary, but when we use the
@@ -237,7 +241,7 @@ tycheckExp p (U.EBinop pos binop e1 e2) = do
     U.BPair ->
       return $ SomeExp (TPair t1 t2) $ L.EPair e1' e2'
 
-tycheckExp p (U.ELam pos (Id x) t e) =
+tycheckExp p (U.ELam _ (Id x) t e) =
   case tycheckType p t of
     SomeType t' -> do
       SomeExp s e' <- local (S.add (Id x) (SomeType t')) $ tycheckExp p e
@@ -255,10 +259,10 @@ tycheckExp p (U.ECall pos e1 args) =
   where
     go :: Repr m g => Proxy g ->
           [U.Exp SourcePos] -> TycheckM m g (SomeExp m g)
-    go p [] = tycheckExp p e1
-    go p (arg:args) = do
-      SomeExp t e <- go p args -- tycheckExp p (U.ECall pos e1 args)
-      SomeExp t' arg' <- tycheckExp p arg
+    go p0 [] = tycheckExp p0 e1
+    go p0 (arg:args0) = do
+      SomeExp t e <- go p0 args0 -- tycheckExp p (U.ECall pos e1 args)
+      SomeExp t' arg' <- tycheckExp p0 arg
       case t of
         TArrow a b ->
           case typeEq t' a of
@@ -390,16 +394,13 @@ tycheckCom (U.CIte pos e c1 c2) = do
           show t2
     _ -> typeError pos $ "expected Bool, got " ++ show t
 
--- tycheckCom (U.CFlip pos c1 c2) =
---   SomeCom <$> pure Flip <*> tycheckCom c1 <*> tycheckCom c2
-
 tycheckCom (U.CObserve pos e) = do
   SomeExp t e' <- tycheckExp Proxy e
   case t of
     TBool -> return $ SomeCom TSt $ Observe e'
     _ -> typeError pos $ "expected Bool, got " ++ show t
 
-tycheckCom (U.CReturn pos e) = do
+tycheckCom (U.CReturn _ e) = do
   SomeExp t e' <- tycheckExp Proxy e
   return $ SomeCom (TExp t) $ Return e'
 
@@ -460,8 +461,8 @@ tycheckFunction (U.Function { U.function_name = Id f_nm
     go ty ((x, x_ty):xs) body = do
       body' <- go ty xs body
       case (x_ty, body') of
-        (SomeType x_ty', SomeNameExp _ f_ty body'') ->
-          return $ SomeNameExp (f_nm, Proxy) (TArrow x_ty' f_ty) $
+        (SomeType x_ty', SomeNameExp _ f_ty0 body'') ->
+          return $ SomeNameExp (f_nm, Proxy) (TArrow x_ty' f_ty0) $
           ELam (nameOfType x x_ty') body''
 
 
@@ -507,14 +508,14 @@ tycheckProg = go
       com' <- tycheckCom com
       return ([], com')
     go (x:xs) com = do
-      SomeNameExp (x, _) t e <- either tycheckFunction tycheckDist x
-      (es, com') <- local (S.add (Id x) $ SomeType t) $ go xs com
-      return (SomeNameExp (x, Proxy) t e : es, com')
+      SomeNameExp (x0, _) t e <- either tycheckFunction tycheckDist x
+      (es, com') <- local (S.add (Id x0) $ SomeType t) $ go xs com
+      return (SomeNameExp (x0, Proxy) t e : es, com')
 
 -- Build initial context from the primitives list.
 initCtx :: Repr m g => [(String, SomeTypeVal m g)] -> Context m g
 initCtx prims =
-  S.fromList $ (\(x, SomeTypeVal t v) -> (Id x, SomeType t)) <$> prims
+  S.fromList $ (\(x, SomeTypeVal t _) -> (Id x, SomeType t)) <$> prims
 
 
 tycheck :: Repr m g =>
