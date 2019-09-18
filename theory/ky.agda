@@ -16,68 +16,84 @@ open import Relation.Nullary.Negation
 open import Agda.Builtin.Size
 open import Data.Product
 open import Data.Unit
+open import Data.Maybe
+open import Data.String
+open import Data.List
+
+TyCon = List Set 
+
+data Env : TyCon → Set₁ where
+  nil : Env []
+  cons : ∀{t Γ} →  t → Env Γ → Env (t ∷ Γ)
+
+data Idx : Set → TyCon → Set₁ where
+  fst : ∀{t Γ} → Idx t (t ∷ Γ)
+  nxt : ∀{t t' Γ} → Idx t Γ → Idx t (t' ∷ Γ)
+
+get : ∀{t Γ} → Idx t Γ → Env Γ → t
+get fst       (cons v _)  = v
+get (nxt idx) (cons _ vs) = get idx vs
+
+upd : ∀{t Γ} → Idx t Γ → t -> Env Γ → Env Γ
+upd fst       v' (cons _ vs) = cons v' vs
+upd (nxt idx) v' (cons v vs) = cons v (upd idx v' vs)
+
+data Exp : TyCon → Set → Set₁ where
+  EVal : ∀{t Γ} → t → Exp Γ t
+  EVar : ∀{t Γ} → Idx t Γ → Exp Γ t
+  EPlus : ∀{Γ} → Exp Γ ℚ → Exp Γ ℚ → Exp Γ ℚ
+
+data Com : TyCon → Set → Set₁ where
+  CUpd : ∀{t Γ} → Idx t Γ → Exp Γ t → Com Γ t
+  --CAlloc : ∀{t Γ} → Exp Γ t → Com (t ∷ Γ) ⊤ 
+  CIte : ∀{t Γ} → Exp Γ Bool → Com Γ t → Com Γ t → Com Γ t
+  CSeq : ∀{t Γ} → Com Γ ⊤ → Com Γ t → Com Γ t
+  CWhile : ∀{t Γ} → Exp Γ Bool → Com Γ t → Com Γ ⊤
+
+eval : ∀{t Γ} → Env Γ → Exp Γ t → t
+eval ρ (EVal v) = v
+eval ρ (EVar x) = get x ρ
+eval ρ (EPlus e₁ e₂) = eval ρ e₁ + eval ρ e₂
 
 -- Cf. Abel 2017
-record Cotree (i : Size) (A State : Set) : Set where
+record Cotree (i : Size) (A : Set) (Γ : TyCon) : Set₁ where
   coinductive
   field
-    ν : Bool
-    δ : ∀{j : Size< i} → A →  State → Cotree j A State
-    upd : State → State    
+    ν : Env Γ -> Maybe (Env Γ)
+    δ : ∀{j : Size< i} → Env Γ → A →  Cotree j A Γ 
 
 open Cotree
 
-∅ : ∀{A State : Set} {i : Size} → Cotree i A State
-ν ∅     = false
+∅ : ∀{i A Γ} → Cotree i A Γ
+ν ∅ _   = nothing
 δ ∅ _ _ = ∅
-upd ∅ s = s
 
-data Val : Set → Set where
-  VBool : Bool → Val Bool
-  VNat  : ℕ → Val ℕ
-
-data Exp : Set → Set where
-  EVal : ∀{t : Set} → Val t → Exp t
-
-data Com : Set → Set₁ where
-  CInc : Com ℕ
-  CUpd : ∀{t : Set} → Exp t → Com t
-  CIte : ∀{t : Set} → Exp Bool → Com t → Com t → Com t
-  --CSeq : ∀{t : Set} → Com ⊤ → Com t → Com t
-  --CWhile : ∀{t : Set} → Exp Bool → Com t → Com ⊤
-
-State : Set
-State = ℕ
-
-eval : ∀{t : Set} → Exp t → State → t
-eval (EVal (VBool b)) _ = b
-eval (EVal (VNat n))  _ = n
-
-interp : ∀{i : Size} → Com ℕ → Cotree i Bool State
-interp CInc = t
-  where t : ∀{j : Size} → Cotree j Bool State
-        ν t     = true
-        δ t _ _ = ∅
-        upd t s = suc s
-interp (CUpd e) = t
-  where t : ∀{j : Size} → Cotree j Bool State
-        ν t     = true
-        δ t _ s = ∅
-        upd t s = eval e s
-interp (CIte e c₁ c₂) = t
-  where t : ∀{j : Size} → Cotree j Bool State
-        ν t = false
-        δ t _ s = if eval e s then interp c₁ else interp c₂
-        
-{-interp (CSeq c₁ c₂) = t
-  where t : ∀{j : Size} → Cotree j Bool State
-        ν t = false
-        δ t _ s = s , 
+interp : ∀{i τ} → ∀(Γ) → Com Γ τ → Cotree i Bool Γ
+interp Γ (CUpd x e) = t
+  where t : ∀{j} → Cotree j Bool Γ
+        ν t ρ   = just (upd x (eval ρ e) ρ)
+        δ t ρ _ = ∅
+interp Γ (CIte e c₁ c₂) = t
+  where t : ∀{j : Size} → Cotree j Bool Γ 
+        ν t ρ with eval ρ e
+        ...      | true  = ν (interp Γ c₁) ρ 
+        ...      | false = ν (interp Γ c₂) ρ 
+        δ t ρ b with eval ρ e
+        ...        | true  = δ (interp Γ c₁) ρ b
+        ...        | false = δ (interp Γ c₂) ρ b
+interp Γ (CSeq c₁ c₂) = t
+  where t : ∀{j : Size} → Cotree j Bool Γ
+        ν t ρ   = nothing
+        δ t ρ b with ν (interp Γ c₁) ρ
+        ...        | nothing = δ (interp Γ c₁) ρ  b
+        ...        | just ρ' = δ (interp Γ c₂) ρ' b
+{-        
 interp (CWhile e c) = t
   where t : ∀{j : Size} → Cotree j Bool State
-        ν t = false
-        δ t _ s = s , interp (CIte e -}
-
-
-
-
+        ν t s with eval e s
+        ...      | true  = ν (interp c) s
+        ...      | false = true
+        δ t s b with eval e s
+        ...        | true  = δ (interp c) s b
+        ...        | false = 
+-}
