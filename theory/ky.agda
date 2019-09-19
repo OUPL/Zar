@@ -1,4 +1,4 @@
-{-# OPTIONS --guardedness #-}
+{-# OPTIONS --guardedness --without-K #-}
 
 module ky where 
 
@@ -9,7 +9,7 @@ open import Data.Rational using (ℚ; _+_; _*_; _-_)
 open import Data.Bool
 open import Data.Bool.Properties
 open import Data.Rational
-open import Data.Nat as ℕ using (ℕ; zero; suc)
+open import Data.Nat as ℕ using (ℕ; zero; suc; ⌊_/2⌋)
 open import Data.Empty
 open import Relation.Nullary 
 open import Relation.Nullary.Negation
@@ -17,7 +17,6 @@ open import Agda.Builtin.Size
 open import Data.Product
 open import Data.Unit
 open import Data.Maybe
-open import Data.String
 open import Data.List
 
 TyCon = List Set 
@@ -43,20 +42,30 @@ data Exp : TyCon → Set → Set₁ where
   EVar : ∀{t Γ} → Idx t Γ → Exp Γ t
   EPlus : ∀{Γ} → Exp Γ ℚ → Exp Γ ℚ → Exp Γ ℚ
 
-data Com : TyCon → Set → Set₁ where
-  CUpd : ∀{t Γ} → Idx t Γ → Exp Γ t → Com Γ t
+record Cotree (i : Size) (A : Set) (Γ : TyCon) : Set₁
+
+data Pattern : Size → TyCon → Set₁ where
+  mkPattern : ∀{i Γ} →  --{j₁ j₂ : Size< i} → 
+    (Cotree i Bool Γ → Cotree i Bool Γ → Cotree i Bool Γ) →
+    Pattern i Γ
+
+data Com : Size → TyCon → Set → Set₁ where
+  CSkip : ∀{i Γ} → Com i Γ ⊤ 
+  CPrim : ∀{i t Γ} → Pattern i Γ → Com i Γ t → Com i Γ t → Com i Γ t
+  --CFlip : ∀{i t Γ} → Com i Γ t → Com i Γ t → Com i Γ t
+  CUpd : ∀{i t Γ} → Idx t Γ → Exp Γ t → Com i Γ ⊤ 
   --CAlloc : ∀{t Γ} → Exp Γ t → Com (t ∷ Γ) ⊤ 
-  CIte : ∀{t Γ} → Exp Γ Bool → Com Γ t → Com Γ t → Com Γ t
-  CSeq : ∀{t Γ} → Com Γ ⊤ → Com Γ t → Com Γ t
-  CWhile : ∀{t Γ} → Exp Γ Bool → Com Γ t → Com Γ ⊤
+  CIte : ∀{i t Γ} → Exp Γ Bool → Com i Γ t → Com i Γ t → Com i Γ t
+  CSeq : ∀{i t Γ} → Com i Γ ⊤ → Com i Γ t → Com i Γ t
+  CWhile : ∀{i t Γ} → Exp Γ Bool → Com i Γ t → Com i Γ ⊤
 
 eval : ∀{t Γ} → Env Γ → Exp Γ t → t
 eval ρ (EVal v) = v
 eval ρ (EVar x) = get x ρ
 eval ρ (EPlus e₁ e₂) = eval ρ e₁ + eval ρ e₂
 
--- Cf. Abel 2017
-record Cotree (i : Size) (A : Set) (Γ : TyCon) : Set₁ where
+-- Cf. Abel 2017 (Equational Reasoning about Formal Languages in Coalgebraic Style)
+record Cotree i A Γ where
   coinductive
   field
     ν : Env Γ -> Maybe (Env Γ)
@@ -68,32 +77,54 @@ open Cotree
 ν ∅ _   = nothing
 δ ∅ _ _ = ∅
 
-interp : ∀{i τ} → ∀(Γ) → Com Γ τ → Cotree i Bool Γ
-interp Γ (CUpd x e) = t
+flip : ∀(i Γ) → Cotree i Bool Γ → Cotree i Bool Γ → Cotree i Bool Γ
+flip i Γ t₁ t₂ = t
+  where t : Cotree i Bool Γ
+        ν t ρ       = nothing
+        δ t ρ true  = t₁
+        δ t ρ false = t₂
+        
+interp : ∀(i){τ} → ∀(Γ) → Com i Γ τ → Cotree i Bool Γ
+interp i Γ CSkip = t
+  where t : ∀{j} → Cotree j Bool Γ
+        ν t ρ   = just ρ 
+        δ t ρ _ = ∅
+interp i Γ (CPrim (mkPattern f) c₁ c₂) = t
+  where t : Cotree i Bool Γ
+        ν t ρ   = nothing
+        δ t ρ _ = f (interp i Γ c₁) (interp i Γ c₂)
+{-interp i Γ (CFlip c₁ c₂) = t
+  where t : Cotree i Bool Γ
+        ν t ρ       = nothing
+        δ t ρ true  = interp i Γ c₁
+        δ t ρ false = interp i Γ c₂-}
+interp i Γ (CUpd x e) = t
   where t : ∀{j} → Cotree j Bool Γ
         ν t ρ   = just (upd x (eval ρ e) ρ)
         δ t ρ _ = ∅
-interp Γ (CIte e c₁ c₂) = t
-  where t : ∀{j : Size} → Cotree j Bool Γ 
+interp i Γ (CIte e c₁ c₂) = t
+  where t : Cotree i Bool Γ 
         ν t ρ with eval ρ e
-        ...      | true  = ν (interp Γ c₁) ρ 
-        ...      | false = ν (interp Γ c₂) ρ 
+        ...      | true  = ν (interp i Γ c₁) ρ 
+        ...      | false = ν (interp i Γ c₂) ρ 
         δ t ρ b with eval ρ e
-        ...        | true  = δ (interp Γ c₁) ρ b
-        ...        | false = δ (interp Γ c₂) ρ b
-interp Γ (CSeq c₁ c₂) = t
-  where t : ∀{j : Size} → Cotree j Bool Γ
+        ...        | true  = δ (interp i Γ c₁) ρ b
+        ...        | false = δ (interp i Γ c₂) ρ b
+interp i Γ (CSeq c₁ c₂) = t
+  where t : Cotree i Bool Γ
         ν t ρ   = nothing
-        δ t ρ b with ν (interp Γ c₁) ρ
-        ...        | nothing = δ (interp Γ c₁) ρ  b
-        ...        | just ρ' = δ (interp Γ c₂) ρ' b
-{-        
-interp (CWhile e c) = t
-  where t : ∀{j : Size} → Cotree j Bool State
-        ν t s with eval e s
-        ...      | true  = ν (interp c) s
-        ...      | false = true
-        δ t s b with eval e s
-        ...        | true  = δ (interp c) s b
-        ...        | false = 
--}
+        δ t ρ b with ν (interp i Γ c₁) ρ
+        ...        | nothing = δ (interp i Γ c₁) ρ  b
+        ...        | just ρ' = δ (interp i Γ c₂) ρ' b
+interp i Γ (CWhile e c) = t
+  where t : Cotree i Bool Γ 
+        ν t ρ with eval ρ e
+        ...      | true  = ν (interp i Γ c) ρ 
+        ...      | false = just ρ 
+        δ t ρ b with eval ρ e
+        ...        | true  = δ (interp i Γ c) ρ b
+        ...        | false = ∅ 
+
+-- Flip as a derived command
+cflip : ∀(i Γ){τ} → Com i Γ τ → Com i Γ τ → Com i Γ τ
+cflip i Γ = CPrim (mkPattern (flip i Γ))
