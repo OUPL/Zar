@@ -74,8 +74,7 @@ list pos = do
 
 nil :: SourcePos -> Parser (Exp SourcePos)
 nil pos = do
-  symbol "nil"
-  symbol ":"
+  symbol "nil" >> symbol ":"
   t <- ty
   return $ ENil pos t
 
@@ -99,8 +98,7 @@ pair pos = do
 
 destruct :: SourcePos -> Parser (Exp SourcePos)
 destruct pos = do
-  symbol "destruct"
-  symbol "("
+  symbol "destruct" >> symbol "("
   l <- expr
   symbol ","
   z <- expr
@@ -111,16 +109,14 @@ destruct pos = do
 
 fst_proj :: SourcePos -> Parser (Exp SourcePos)
 fst_proj pos = do
-  symbol "fst"
-  symbol "("
+  symbol "fst" >> symbol "("
   p <- expr
   symbol ")"
   return $ EUnop pos UFst p
 
 snd_proj :: SourcePos -> Parser (Exp SourcePos)
 snd_proj pos = do
-  symbol "snd"
-  symbol "("
+  symbol "snd" >> symbol "("
   p <- expr
   symbol ")"
   return $ EUnop pos USnd p
@@ -255,8 +251,7 @@ cElse :: Parser [Com SourcePos]
 cElse = L.indentBlock scn p
   where
     p = do
-      keyword "else"
-      symbol ":"
+      keyword "else" >> symbol ":"
       return $ L.IndentSome Nothing return com
 
 cWhile :: SourcePos -> Parser (Com SourcePos)
@@ -308,8 +303,7 @@ list_ty = do
 
 dist_ty :: Parser Type
 dist_ty = do
-  symbol "dist"
-  symbol "("
+  symbol "dist" >> symbol "("
   t <- ty
   symbol ")"
   return $ TDist t
@@ -377,8 +371,7 @@ dist = L.indentBlock scn $ do
 
 main :: Parser (Com SourcePos)
 main = L.indentBlock scn $ do
-  keyword "main"
-  symbol ":"
+  keyword "main" >> symbol ":"
   return $ L.IndentSome Nothing (return . mkSeq) com
 
 prog :: Parser ([Either (Function SourcePos) (Dist SourcePos)], Com SourcePos)

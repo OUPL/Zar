@@ -222,15 +222,18 @@ data Exp (m :: * -> *) (g :: * -> *) (a :: *) where
                Unop a -> Exp m g b -> Exp m g (UnopResTy a b)
   EBinop    :: (Typeable m, Typeable g, Typeable a, Eq b, Show b, Typeable b) =>
                Binop a -> Exp m g b -> Exp m g b -> Exp m g (BinopResTy a b b)
-  EPair     :: (Eq a, Show a, Typeable a, Eq b, Show b, Typeable b) =>
+  EPair     :: (Typeable m, Typeable g,
+                Eq a, Show a, Typeable a, Eq b, Show b, Typeable b) =>
                Exp m g a -> Exp m g b -> Exp m g (a, b)
   ENil      :: (Eq a, Show a, Typeable a) => Exp m g [a]
-  ECons     :: (Eq a, Show a, Typeable a) =>
+  ECons     :: (Typeable m, Typeable g, Eq a, Show a, Typeable a) =>
                Exp m g a -> Exp m g [a] -> Exp m g [a]
-  EDestruct :: (Show a, Typeable a, Show b) =>
+  EDestruct :: (Typeable m, Typeable g,
+                Show a, Typeable a, Show b, Typeable b) =>
                Exp m g [a] -> Exp m g b -> Exp m g (a -> [a] -> b) -> Exp m g b
   EUniform  :: (Eq a, Show a, Typeable a) => Exp m g [a] -> Exp m g (g a)
-  ELam      :: (Show a, Typeable a, Eq b, Show b, Typeable b) =>
+  ELam      :: (Typeable m, Typeable g,
+                Show a, Typeable a, Eq b, Show b, Typeable b) =>
                Name a -> Exp m g b -> Exp m g (a -> b)
   EApp      :: (Show a, Typeable a, Show b) =>
                Exp m g (a -> b) -> Exp m g a -> Exp m g b
@@ -262,9 +265,25 @@ instance Eq (Exp m g a) where
       Just (b'', e1'', e2'') ->
         b'' == b' && e1'' == e1' && e2'' == e2'
       _ -> False
+  EPair e1 e2 == EPair e1' e2' =
+    case cast (e1, e2) of
+      Just (e1'', e2'') ->
+        e1'' == e1' && e2'' == e2'
+      _ -> False
   ENil == ENil = True
+  ECons x xs == ECons y ys =
+    case cast (x, xs) of
+      Just (x', xs') ->
+        x' == y && xs' == ys
+      _ -> False
+  EDestruct l z f == EDestruct l' z' f' =
+    case cast (l, z, f) of
+      Just (l'', z'', f'') ->
+        l'' == l' && z'' == z' && f'' == f'
+      _ -> False
   EUniform e1 == EUniform e2 = e1 == e2
-  -- TODO finish
+  -- Lambda equality up to alpha renaming (substitute x' for x in e)
+  ELam x e == ELam x' e' = subst x (EVar x') e == e'
   _ == _ = error "internal error in Lang:Eq (Exp ...)"
 
 -- instance Show a => Show (Exp m g a) where
@@ -449,6 +468,12 @@ eval_val (VCons hd tl) = eval_val hd : eval_val tl
 eval_val (VPair x y) = (eval_val x, eval_val y)
 eval_val v = error $ "eval_val: unsupported value: " ++ show v
 
+-- The following operations on list values require VDist error cases
+-- because it's possible for a distribution value to have a list type
+-- index when 'g' is set to the list type constructor (a VDist is a
+-- value of type 'Val m g (g a)' for any choice of 'm', 'g', and
+-- 'a'.).
+
 -- List value lookup by index.
 vlist_nth :: Int -> Val m g [a] -> Val m g a
 vlist_nth _ VNil = error "vlist_nth: empty list"
@@ -456,17 +481,17 @@ vlist_nth n (VCons hd tl)
   | n < 0 = error "vlist_nth: negative index"
   | n == 0 = hd
   | otherwise = vlist_nth (n-1) tl
-vlist_nth _ _ = error "internal error in Lang:vlist_nth; please report"
+vlist_nth _ (VDist _) = error "internal error in Lang:vlist_nth; please report"
 
 vlist_length :: Val m g [a] -> Int
 vlist_length VNil = 0
 vlist_length (VCons _ tl) = 1 + vlist_length tl
-vlist_length _ = error "internal error in Lang:vlist_length; please report"
+vlist_length (VDist _) = error "internal error in Lang:vlist_length; please report"
 
 vlist_list :: Val m g [a] -> [Val m g a]
 vlist_list VNil = []
 vlist_list (VCons x xs) = x : vlist_list xs
-vlist_list _ = error "internal error in Lang:vlist_list; please report"
+vlist_list (VDist _) = error "internal error in Lang:vlist_list; please report"
 
 
 ------------------------------------------------------------------------

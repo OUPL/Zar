@@ -24,6 +24,7 @@ import           Symtab (Id(..), Symtab)
 import qualified Symtab as S (add, get, fromList)
 import qualified Untyped as U
 
+-- Existential package types.
 data SomeExp m g where
   SomeExp :: forall m g a. (Repr m g, Eq a, Show a, Typeable a) =>
              Type m g a -> Exp m g a -> SomeExp m g
@@ -41,6 +42,9 @@ data SomeCom m g where
              Type m g a -> Com m g a -> SomeCom m g
 deriving instance Show (SomeCom m g)
 
+-- Testing for type equality, producing an element (refl) of the
+-- equality type in the case of success. This allows the type
+-- variables a and b to be unified in that case.
 typeEq :: Type m g a -> Type m g b -> Maybe (a :~: b)
 typeEq TBool     TBool     = Just Refl
 typeEq TFloat    TFloat    = Just Refl
@@ -74,8 +78,11 @@ typeEq _ _ = Nothing
 nameOfType :: String -> Type m g a -> Name a
 nameOfType x _ = (x, Proxy)
 
+-- A context maps identifiers to types.
 type Context m g = Symtab (SomeType m g)
 
+-- Typechecking computations have a read-only context and are able to
+-- raise exceptions.
 type TycheckM m g a = ReaderT (Context m g) (ExceptT String Identity) a
 
 runTycheck :: Context m g -> TycheckM m g a -> Either String a
@@ -90,6 +97,7 @@ extendCtx ((x, ty) : rest) ctx =
   extendCtx rest $ S.add x ty ctx
 extendCtx [] ctx = ctx
 
+-- Convert an untyped literal to a typed value.
 val_of_lit :: Repr m g => U.Literal -> SomeTypeVal m g
 val_of_lit (U.LRational r) = SomeTypeVal TRational $ L.VRational r
 val_of_lit (U.LFloat f) = SomeTypeVal TFloat $ L.VFloat f
@@ -101,18 +109,7 @@ val_of_lit (U.LPair _ _) = error "internal error: LPair unimplemented in Tycheck
       SomeTypeVal t2 v2 = val_of_lit l2
   in SomeTypeVal (TPair t1 t2) (VPair v1 v2)-}
 
-
--- It seems like this shouldn't be necessary, but when we use the
--- regular Proxy type we run into problems where GHC gets kinds
--- confused (maybe it defaults to * when introducing a type variable
--- which then refuses to unify with something of kind *->*). So, we
--- just use our own proxy type with the kind of its type parameter
--- fixed to *->*.
--- NO longer needed now that m is determined by g by a functional
--- dependency on the Repr class.
--- data ProxyF (f :: * -> *) where
---   ProxyF :: ProxyF f
-
+-- Convert an untyped Type to its GADT representation.
 tycheckType :: Repr m g => Proxy g -> U.Type -> SomeType m g
 tycheckType _ U.TRational = SomeType TRational
 tycheckType _ U.TInteger  = SomeType TInteger
@@ -140,6 +137,7 @@ tycheckExp _ (U.ELit _ lit) =
   case val_of_lit lit of
     SomeTypeVal t v -> return $ SomeExp t $ L.EVal v
 
+-- Look up the type of the variable in the context.
 tycheckExp _ (U.EVar pos x) = do
   ctx <- ask
   case S.get x ctx of
