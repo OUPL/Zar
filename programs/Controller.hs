@@ -1,6 +1,6 @@
 {-# LANGUAGE RebindableSyntax, OverloadedStrings, GADTs #-}
 
-module SyntaxTest where
+module Controller where
 
 import Prelude hiding
   ( (>>)

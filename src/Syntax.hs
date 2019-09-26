@@ -1,4 +1,10 @@
-{-# LANGUAGE RebindableSyntax, GADTs #-}
+{-# LANGUAGE RebindableSyntax
+           , OverloadedStrings
+           , GADTs
+           , TypeSynonymInstances
+           , FlexibleInstances
+           , DataKinds
+           , FlexibleContexts #-}
 
 module Syntax where
 
@@ -16,10 +22,15 @@ import           Prelude hiding
   , fromRational
   , fromInteger
   , negate
-  , ifThenElse  
+  , ifThenElse
+  , map
+  , sum 
   )
 
+import qualified Prelude
+
 import           Data.Typeable
+import           Data.String( IsString(..) )
 
 import           Lang hiding (Com, Exp, St, Val, interp)
 import qualified Lang (Com, Exp, St, Val)
@@ -33,11 +44,38 @@ type Val = Lang.Val InterpM Tree
 
 {-- VALUES --}
 
-fromRational :: Rational -> Val Rational
-fromRational = VRational
+class FromRational a where
+  fromR :: Rational -> a
 
-fromInteger :: Integer -> Val Integer
-fromInteger = VInteger
+instance FromRational (Val Rational) where
+  fromR = VRational
+
+instance FromRational (Exp Rational) where
+  fromR = EVal . fromR
+
+instance FromRational (Val Double) where
+  fromR r = VFloat (Prelude.fromRational r)
+
+instance FromRational (Exp Double) where
+  fromR = EVal . fromR
+
+fromRational :: FromRational a => Rational -> a
+fromRational = fromR
+
+class FromInteger a where
+  fromI :: Integer -> a
+
+instance FromInteger (Val Integer) where
+  fromI = VInteger
+
+instance FromInteger (Exp Integer) where
+  fromI = EVal . fromI
+
+instance FromInteger (Exp Double) where
+  fromI i = EVal $ VFloat $ Prelude.fromIntegral i
+
+fromInteger :: FromInteger a => Integer -> a
+fromInteger = fromI
 
 true :: Val Bool
 true = VBool True
@@ -65,20 +103,47 @@ prim = VPrim
 
 {-- EXPRESSIONS --}
 
+instance IsString (Name a) where
+  fromString x = (x, Proxy)
+
+instance IsString (Exp a) where
+  fromString x = EVar $ fromString x
+
+val :: Val a -> Exp a
+val = EVal
+
 destruct :: (Show a, Typeable a, Show b) => Exp [a] -> Exp b -> Exp (a -> [a] -> b) -> Exp b
 destruct = EDestruct
 
-head :: (Eq a, Show a, Typeable a) => Exp a -> Exp [a] -> Exp a
-head def l =
-  let x  = ("x", Proxy)
-      xs = ("xs", Proxy)
-  in destruct l def (ELam x $ ELam xs $ EVar x)
+(+) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTPlus a a)
+(+) = EBinop BPlus
 
-tail :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp [a]
-tail l =
-  let x  = ("x", Proxy)
-      xs = ("xs", Proxy)
-  in destruct l (EVal nil) (ELam x $ ELam xs $ EVar xs)
+(-) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTMinus a a)
+(-) = EBinop BMinus
+
+(*) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTMult a a)
+(*) = EBinop BMult
+
+(/) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTDiv a a)
+(/) = EBinop BDiv
+
+(&&) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTAnd a a)
+(&&) = EBinop BAnd
+
+(||) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTOr a a)
+(||) = EBinop BOr
+
+(==) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTEq a a)
+(==) = EBinop BEq
+
+(<) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTLt a a)
+(<) = EBinop BLt
+
+fun :: (Show a, Typeable a, Eq b, Show b, Typeable b) => Name a -> Exp b -> Exp (a -> b)
+fun = ELam
+
+unif :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp (Tree a)
+unif = EUniform
 
 {-- COMMANDS --}
 
@@ -111,4 +176,17 @@ while = While
 int :: Val Integer -> Int
 int (VInteger i) = fromIntegral i
 
-  
+{-- LIBRARY FUNCTIONS --}
+
+head :: (Eq a, Show a, Typeable a) => Exp a -> Exp [a] -> Exp a
+head def l = destruct l def (ELam "x" $ ELam "xs" "x")
+
+tail :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp [a]
+tail l = destruct l ENil (ELam "x" $ ELam "xs" "xs")
+
+--TYPECHECKING FAILS: len :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp Integer
+len l = destruct l 0 (ELam "x" $ ELam "xs" $ 1 + len "xs")
+
+sum l = destruct l 0 (ELam "x" $ ELam "xs" $ "x" + sum "xs")
+
+map f l = destruct l ENil (ELam "x" $ ELam "xs" $ ECons (EApp f "x") (map f "xs"))
