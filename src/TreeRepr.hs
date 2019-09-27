@@ -26,9 +26,11 @@ prims :: [(String, SomeTypeVal)]
 prims =
   [
     ("bernoulli", L.SomeTypeVal (TArrow TRational (TDist TBool)) bernoulli_prim)
+  , ("float_of_int", L.SomeTypeVal (TArrow TInteger TFloat) float_of_int)    
   , ("len_float", L.SomeTypeVal (TArrow (TList TFloat) TInteger) len_float)
   , ("sum_float", L.SomeTypeVal (TArrow (TList TFloat) TFloat) sum_float)
-    -- Add more here
+  , ("map_float", L.SomeTypeVal (TArrow (TPair (TArrow TFloat TFloat) (TList TFloat)) (TList TFloat)) map_float)
+  , ("all_float", L.SomeTypeVal (TArrow (TPair (TArrow TFloat TBool) (TList TFloat)) TBool) all_float)
   ]
 
 bernoulli_prim :: Val (Rational -> Tree Bool)
@@ -38,6 +40,11 @@ bernoulli_prim = VPrim f
     f (VRational r) = do
       lbl <- freshLbl
       return $ EVal $ VDist $ EVal . VBool <$> bernoulli lbl r
+
+float_of_int :: Val (Integer -> Double)
+float_of_int = VPrim f
+  where f :: Val Integer -> InterpM (Exp Double)
+        f (VInteger i) = return $ EVal $ VFloat (fromIntegral i :: Double)
 
 len_float :: Val ([Double] -> Integer)
 len_float = VPrim f
@@ -51,7 +58,6 @@ sum_float = VPrim f
         f VNil = return $ EVal $ VFloat 0
         f (VCons x l) = f l >>= \y -> return $ EBinop BPlus y (EVal x)
 
-{-
 map_float :: Val ((Double -> Double, [Double]) -> [Double])
 map_float = VPrim f
   where f :: Val (Double -> Double, [Double]) -> InterpM (Exp [Double])
@@ -59,7 +65,15 @@ map_float = VPrim f
         f (VPair g (VCons x l)) = do
           l' <- f (VPair g l)
           return $ ECons (EApp (EVal g) (EVal x)) l'
--}
+
+all_float :: Val ((Double -> Bool, [Double]) -> Bool)
+all_float = VPrim f
+  where f :: Val (Double -> Bool, [Double]) -> InterpM (Exp Bool)
+        f (VPair _ VNil) = return $ EVal (VBool True)
+        f (VPair g (VCons x l)) = do
+          b <- f (VPair g l)
+          return $ EBinop BAnd (EApp (EVal g) (EVal x)) b
+
 -- Tree instances
 instance Sample Tree where
   sample = samplerIO -- in Sample.hs

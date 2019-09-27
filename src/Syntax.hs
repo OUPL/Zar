@@ -4,8 +4,7 @@
            , TypeSynonymInstances
            , FlexibleInstances
            , DataKinds
-           , FlexibleContexts
-           , MultiParamTypeClasses #-}
+           , FlexibleContexts #-}
 
 module Syntax where
 
@@ -203,27 +202,22 @@ class HasLen a where
   len :: Exp ([a] -> Integer)
 
 instance HasLen Double where
-  len = "len_double"
+  len = "len_float"
 
-class HasFold a b where
-  fold :: Exp ((a -> b -> b) -> [a] -> b -> b)
+class HasSum a where
+  sum :: Exp ([a] -> a)
 
-{-len_prim :: Val ([Double] -> Integer)
-len_prim = VPrim f
-  where f :: Val [Double]-}
+instance HasSum Double where
+  sum = "sum_float"
 
-{-
-sum_impl = fun "l" $ destruct "l" 0 (ELam "x" $ ELam "xs" $ "x" + EApp "sum" "xs")
+class HasMap a where
+  map :: Exp ((a -> a, [a]) -> [a])
 
-map_impl = fun "f" $ fun "l" $
-  destruct "l" ENil (ELam "x" $ ELam "xs" $ ECons (EApp "f" "x") (EApp (EApp "map" "f") "xs"))
+instance HasMap Double where
+  map = "map_float"
 
-all_impl = fun "f" $ fun "l" $
-  destruct "l" (val true) (ELam "x" $ ELam "xs" $ (EApp "f" "x") && (EApp (EApp "all" "f") "xs"))
--}
+class HasAll a where
+  all :: Exp ((a -> Bool, [a]) -> Bool)
 
-{-
-preludeEnv :: Env
-preludeEnv =
-  [ SomeNameExp "len" len_impl ]
--}
+instance HasAll Double where
+  all = "all_float"
