@@ -4,7 +4,8 @@
            , TypeSynonymInstances
            , FlexibleInstances
            , DataKinds
-           , FlexibleContexts #-}
+           , FlexibleContexts
+           , MultiParamTypeClasses #-}
 
 module Syntax where
 
@@ -16,15 +17,16 @@ import           Prelude hiding
   , (*)
   , (/)
   , (&&)
-  , (||)    
+  , (||)
+  , (==)
+  , (<)
+  , (<=)
   , not
   , return
   , fromRational
   , fromInteger
   , negate
   , ifThenElse
-  , map
-  , sum 
   )
 
 import qualified Prelude
@@ -32,7 +34,7 @@ import qualified Prelude
 import           Data.Typeable
 import           Data.String( IsString(..) )
 
-import           Lang hiding (Com, Exp, St, Val, interp)
+import           Lang hiding (Com, Exp, St, Val, Env, interp)
 import qualified Lang (Com, Exp, St, Val)
 import           Tree
 import           TreeInterp
@@ -41,6 +43,7 @@ type Com = Lang.Com InterpM Tree
 type Exp = Lang.Exp InterpM Tree
 type St  = Lang.St  InterpM Tree
 type Val = Lang.Val InterpM Tree
+type Env = [Lang.SomeNameExp InterpM Tree]
 
 {-- VALUES --}
 
@@ -133,11 +136,17 @@ destruct = EDestruct
 (||) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTOr a a)
 (||) = EBinop BOr
 
+infix 3 ==
 (==) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTEq a a)
 (==) = EBinop BEq
 
+infix 3 <
 (<) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTLt a a)
 (<) = EBinop BLt
+
+infix 3 <=
+(<=) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTLt a a)
+(<=) e1 e2 = (e1 < e2) || (e1 == e2)
 
 fun :: (Show a, Typeable a, Eq b, Show b, Typeable b) => Name a -> Exp b -> Exp (a -> b)
 fun = ELam
@@ -150,6 +159,7 @@ unif = EUniform
 skip :: Com St
 skip = Skip
 
+infix 3 <-- 
 (<--) :: (Show a, Typeable a) => Name a -> Exp a -> Com St
 (<--) = Assign
 
@@ -159,6 +169,7 @@ skip = Skip
 ifThenElse :: (Show a, Typeable a) => Exp Bool -> Com a -> Com a -> Com a
 ifThenElse = Ite
 
+infix 3 <~~ 
 (<~~) :: (Show a, Typeable a) => Name a -> Exp (Tree a) -> Com St
 (<~~) = Sample
 
@@ -176,7 +187,11 @@ while = While
 int :: Val Integer -> Int
 int (VInteger i) = fromIntegral i
 
-{-- LIBRARY FUNCTIONS --}
+infix 5 # -- note(jgs): Must be greater than <--, <~~
+(#) :: (Show a, Typeable a, Show b) => Exp (a -> b) -> Exp a -> Exp b
+(#) = EApp
+
+{-- ZAR PRELUDE --}
 
 head :: (Eq a, Show a, Typeable a) => Exp a -> Exp [a] -> Exp a
 head def l = destruct l def (ELam "x" $ ELam "xs" "x")
@@ -184,9 +199,31 @@ head def l = destruct l def (ELam "x" $ ELam "xs" "x")
 tail :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp [a]
 tail l = destruct l ENil (ELam "x" $ ELam "xs" "xs")
 
---TYPECHECKING FAILS: len :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp Integer
-len l = destruct l 0 (ELam "x" $ ELam "xs" $ 1 + len "xs")
+class HasLen a where
+  len :: Exp ([a] -> Integer)
 
-sum l = destruct l 0 (ELam "x" $ ELam "xs" $ "x" + sum "xs")
+instance HasLen Double where
+  len = "len_double"
 
-map f l = destruct l ENil (ELam "x" $ ELam "xs" $ ECons (EApp f "x") (map f "xs"))
+class HasFold a b where
+  fold :: Exp ((a -> b -> b) -> [a] -> b -> b)
+
+{-len_prim :: Val ([Double] -> Integer)
+len_prim = VPrim f
+  where f :: Val [Double]-}
+
+{-
+sum_impl = fun "l" $ destruct "l" 0 (ELam "x" $ ELam "xs" $ "x" + EApp "sum" "xs")
+
+map_impl = fun "f" $ fun "l" $
+  destruct "l" ENil (ELam "x" $ ELam "xs" $ ECons (EApp "f" "x") (EApp (EApp "map" "f") "xs"))
+
+all_impl = fun "f" $ fun "l" $
+  destruct "l" (val true) (ELam "x" $ ELam "xs" $ (EApp "f" "x") && (EApp (EApp "all" "f") "xs"))
+-}
+
+{-
+preludeEnv :: Env
+preludeEnv =
+  [ SomeNameExp "len" len_impl ]
+-}

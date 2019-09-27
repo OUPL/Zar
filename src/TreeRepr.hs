@@ -26,6 +26,8 @@ prims :: [(String, SomeTypeVal)]
 prims =
   [
     ("bernoulli", L.SomeTypeVal (TArrow TRational (TDist TBool)) bernoulli_prim)
+  , ("len_float", L.SomeTypeVal (TArrow (TList TFloat) TInteger) len_float)
+  , ("sum_float", L.SomeTypeVal (TArrow (TList TFloat) TFloat) sum_float)
     -- Add more here
   ]
 
@@ -37,6 +39,27 @@ bernoulli_prim = VPrim f
       lbl <- freshLbl
       return $ EVal $ VDist $ EVal . VBool <$> bernoulli lbl r
 
+len_float :: Val ([Double] -> Integer)
+len_float = VPrim f
+  where f :: Val [Double] -> InterpM (Exp Integer)
+        f VNil = return $ EVal $ VInteger 0
+        f (VCons _ l) = f l >>= \n -> return $ EBinop BPlus n (EVal $ VInteger 1)
+
+sum_float :: Val ([Double] -> Double)
+sum_float = VPrim f
+  where f :: Val [Double] -> InterpM (Exp Double)
+        f VNil = return $ EVal $ VFloat 0
+        f (VCons x l) = f l >>= \y -> return $ EBinop BPlus y (EVal x)
+
+{-
+map_float :: Val ((Double -> Double, [Double]) -> [Double])
+map_float = VPrim f
+  where f :: Val (Double -> Double, [Double]) -> InterpM (Exp [Double])
+        f (VPair _ VNil) = return $ EVal VNil
+        f (VPair g (VCons x l)) = do
+          l' <- f (VPair g l)
+          return $ ECons (EApp (EVal g) (EVal x)) l'
+-}
 -- Tree instances
 instance Sample Tree where
   sample = samplerIO -- in Sample.hs
