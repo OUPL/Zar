@@ -29,6 +29,8 @@ import Prelude hiding
   , pi
   )
 
+import qualified Prelude
+
 import Data.String( IsString(..) )
 import Data.Typeable (Typeable)
 
@@ -39,18 +41,27 @@ import TreeRepr()
 import Inference
 import SparseLinAlg
 
+{- TODO: 
+   * Re-implement (>>=) so that rebindable syntax directly 
+     generates InterpM (Tree a) instead of Com a. This should make 
+     it possible to eliminate the annoying fromString coercions that 
+     currently appear everywhere.
+   * Re-implement the remaining polymorphic list library functions.
+   * Do some more experiments with stability invariants. -}
+
 pi :: Exp Double -> Exp Double -> Exp [Double] -> Exp Double
 pi k vr vs =
   k * ( (vr - head 0.0 vs) +
         (sum # (map # Lang.EPair (fun ("v" :: Lang.Name Double) $ vr - "v") vs))
-          / ("float_of_int" # (len_poly # vs)))
+          / ("float_of_int" # (len # vs)))
 
 plant :: Exp Double -> Exp Double
 plant u = u
 
 within_range :: Exp [Double] -> Exp Double -> Exp Double -> Exp Bool
 within_range vs vr eps =
-  all # Lang.EPair (fun ("v" :: Lang.Name Double) $ (vr - eps <= "v") && ("v" <= vr + eps)) vs
+  all # Lang.EPair (fun ("v" :: Lang.Name Double)
+    $ (vr - eps <= "v") && ("v" <= vr + eps)) vs
 
 main :: Com (Exp Bool)
 main = do
@@ -72,19 +83,20 @@ main = do
 
   return $ within_range "vs" "vr" 0.4
 
-len_poly :: (Show a, Typeable a) => Exp ([a] -> Integer)
-len_poly = Lang.EVal $ Lang.VPrim f
-  where
-    f :: Val [a] -> InterpM (Exp Integer)
-    f Lang.VNil = undefined
-    f (Lang.VCons _ l) = undefined
-    -- Syntax collision due to the rebindable syntax stuff.
-    -- f Lang.VNil = return $ Lang.EVal $ Lang.VInteger 0
-    -- f l >>= \n -> return $ Lang.EBinop Lang.BPlus n (Lang.EVal $ Lang.VInteger 1)
-
 t = Lang.interp Lang.initEnv main
 
 pmf :: IO [(Exp Bool, Double)]
 pmf = sample_infer t (int 1000)
 
 exact = solve_tree ((\(Lang.EVal (Lang.VBool b)) -> b) <$> t)
+
+-- List-library functions
+
+len :: (Show a, Typeable a) => Exp ([a] -> Integer)
+len = Lang.EVal $ Lang.VPrim f
+  where
+    f :: Val [a] -> InterpM (Exp Integer)
+    f Lang.VNil = Prelude.return 0
+    f (Lang.VCons _ l) =
+      let n = len # Lang.EVal l
+      in Prelude.return $ n + (1 :: Exp Integer)

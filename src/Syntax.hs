@@ -199,12 +199,6 @@ head def l = destruct l def (ELam "x" $ ELam "xs" "x")
 tail :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp [a]
 tail l = destruct l ENil (ELam "x" $ ELam "xs" "xs")
 
-class HasLen a where
-  len :: Exp ([a] -> Integer)
-
-instance HasLen Double where
-  len = "len_float"
-
 class HasSum a where
   sum :: Exp ([a] -> a)
 
@@ -222,3 +216,4 @@ class HasAll a where
 
 instance HasAll Double where
   all = "all_float"
+

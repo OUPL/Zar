@@ -27,7 +27,6 @@ prims =
   [
     ("bernoulli", L.SomeTypeVal (TArrow TRational (TDist TBool)) bernoulli_prim)
   , ("float_of_int", L.SomeTypeVal (TArrow TInteger TFloat) float_of_int)    
-  , ("len_float", L.SomeTypeVal (TArrow (TList TFloat) TInteger) len_float)
   , ("sum_float", L.SomeTypeVal (TArrow (TList TFloat) TFloat) sum_float)
   , ("map_float", L.SomeTypeVal (TArrow (TPair (TArrow TFloat TFloat) (TList TFloat)) (TList TFloat)) map_float)
   , ("all_float", L.SomeTypeVal (TArrow (TPair (TArrow TFloat TBool) (TList TFloat)) TBool) all_float)
@@ -45,12 +44,6 @@ float_of_int :: Val (Integer -> Double)
 float_of_int = VPrim f
   where f :: Val Integer -> InterpM (Exp Double)
         f (VInteger i) = return $ EVal $ VFloat (fromIntegral i :: Double)
-
-len_float :: Val ([Double] -> Integer)
-len_float = VPrim f
-  where f :: Val [Double] -> InterpM (Exp Integer)
-        f VNil = return $ EVal $ VInteger 0
-        f (VCons _ l) = f l >>= \n -> return $ EBinop BPlus n (EVal $ VInteger 1)
 
 sum_float :: Val ([Double] -> Double)
 sum_float = VPrim f
