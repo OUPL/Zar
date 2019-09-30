@@ -66,6 +66,8 @@ data Val (m :: * -> *) (g :: * -> *) (a :: *) where
   -- Experimental/unused. Polymorphic primitives.
   -- VPrim' :: (Show c, Typeable c) =>
   --           (forall a b. Val m g a -> m (Exp m g b)) -> Val m g (c -> d)
+  -- VPrim' :: (Show c, Typeable c) =>
+  --           (forall a b. Val m g a -> m (Exp m g b)) -> Val m g (c -> d)
 
 -- deriving instance Typeable Val
 

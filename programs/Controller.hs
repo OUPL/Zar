@@ -30,10 +30,11 @@ import Prelude hiding
   )
 
 import Data.String( IsString(..) )
+import Data.Typeable (Typeable)
 
 import qualified Lang
 import Syntax
-import TreeInterp()
+import TreeInterp (InterpM)
 import TreeRepr()
 import Inference
 import SparseLinAlg
@@ -42,7 +43,7 @@ pi :: Exp Double -> Exp Double -> Exp [Double] -> Exp Double
 pi k vr vs =
   k * ( (vr - head 0.0 vs) +
         (sum # (map # Lang.EPair (fun ("v" :: Lang.Name Double) $ vr - "v") vs))
-          / ("float_of_int" # (len # vs)))
+          / ("float_of_int" # (len_poly # vs)))
 
 plant :: Exp Double -> Exp Double
 plant u = u
@@ -71,6 +72,15 @@ main = do
 
   return $ within_range "vs" "vr" 0.4
 
+len_poly :: (Show a, Typeable a) => Exp ([a] -> Integer)
+len_poly = Lang.EVal $ Lang.VPrim f
+  where
+    f :: Val [a] -> InterpM (Exp Integer)
+    f Lang.VNil = undefined
+    f (Lang.VCons _ l) = undefined
+    -- Syntax collision due to the rebindable syntax stuff.
+    -- f Lang.VNil = return $ Lang.EVal $ Lang.VInteger 0
+    -- f l >>= \n -> return $ Lang.EBinop Lang.BPlus n (Lang.EVal $ Lang.VInteger 1)
 
 t = Lang.interp Lang.initEnv main
 

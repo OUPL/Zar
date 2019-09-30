@@ -114,7 +114,8 @@ instance IsString (Exp a) where
 val :: Val a -> Exp a
 val = EVal
 
-destruct :: (Show a, Typeable a, Show b) => Exp [a] -> Exp b -> Exp (a -> [a] -> b) -> Exp b
+destruct :: (Show a, Typeable a, Show b, Typeable b) =>
+            Exp [a] -> Exp b -> Exp (a -> [a] -> b) -> Exp b
 destruct = EDestruct
 
 (+) :: (Show a, Eq a, Typeable a) => Exp a -> Exp a -> Exp (BinopResTy BTPlus a a)
