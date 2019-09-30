@@ -255,7 +255,7 @@ deriving instance Show (SomeNameExp m g)
 
 instance Eq (Exp m g a) where
   EVal x == EVal y = x == y
-  EVar x == EVar y = x == y
+  EVar x == EVar y = fst x == fst y
   EUnop u1 e1 == EUnop u2 e2 =
     case cast (u1, e1) of
       Just (u1', e1') -> u1' == u2 && e1' == e2
