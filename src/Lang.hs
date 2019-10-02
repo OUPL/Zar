@@ -500,7 +500,7 @@ vlist_list (VDist _) = error "internal error in Lang:vlist_list; please report"
 -- | Class of representations as defined by the type constructors 'm'
 -- and 'g', each with a set of supported primitives and a way of
 -- interpreting commands in that representation.
-class (Typeable m, AllF g) => Repr m g | g -> m where
+class (Monad m, Typeable m, AllF g) => Repr m g | g -> m where
   primitives :: [(String, SomeTypeVal m g)]
   interp :: (Eq a, Show a) => Env m g -> Com m g a -> g a
 
