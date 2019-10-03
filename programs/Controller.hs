@@ -25,6 +25,9 @@ import Prelude hiding
   , map
   , sum
   , all
+  , drop
+  , fst
+  , snd
 
   , pi
   )
@@ -35,6 +38,7 @@ import Data.String( IsString(..) )
 import Data.Typeable (Typeable)
 
 import qualified Lang
+import List
 import Syntax
 import TreeInterp (InterpM)
 import TreeRepr()
@@ -42,17 +46,12 @@ import Inference
 import SparseLinAlg
 
 {- TODO: 
-   * Re-implement (>>=) so that rebindable syntax directly 
-     generates InterpM (Tree a) instead of Com a. This should make 
-     it possible to eliminate the annoying fromString coercions that 
-     currently appear everywhere.
-   * Re-implement the remaining polymorphic list library functions.
    * Do some more experiments with stability invariants. -}
 
 pi :: Exp Double -> Exp Double -> Exp [Double] -> Exp Double
 pi k vr vs =
   k * ( (vr - head 0.0 vs) +
-        (sum # (map # Lang.EPair (fun ("v" :: Lang.Name Double) $ vr - "v") vs))
+        (sum (map # Lang.EPair (fun ("v" :: Lang.Name Double) $ vr - "v") vs))
           / ("float_of_int" # (len # vs)))
 
 plant :: Exp Double -> Exp Double
@@ -60,8 +59,9 @@ plant u = u
 
 within_range :: Exp [Double] -> Exp Double -> Exp Double -> Exp Bool
 within_range vs vr eps =
-  all # Lang.EPair (fun ("v" :: Lang.Name Double)
-    $ (vr - eps <= "v") && ("v" <= vr + eps)) vs
+  all (map #
+    Lang.EPair (fun ("v" :: Lang.Name Double) $ (vr - eps <= "v") && ("v" <= vr + eps))
+               vs)
 
 main :: Com (Exp Bool)
 main = do
@@ -79,9 +79,13 @@ main = do
     "new_v" <-- "dv" + ("v" :: Exp Double)
     "v"     <-- ("new_v" :: Exp Double)
     "vs"    <-- Lang.ECons ("new_v" :: Exp Double) "vs"
-    "i"       <-- "i" + (1 :: Exp Integer)
+    "i"     <-- "i" + (1 :: Exp Integer)
 
-  return $ within_range "vs" "vr" 0.4
+  return $ within_range (drop # Lang.EPair 5 "vs") "vr" 0.5
+
+main2 :: Com (Exp Bool)
+main2 = do
+  return $ all $ Lang.ECons (Lang.EVal true) Lang.ENil
 
 t = Lang.interp Lang.initEnv main
 
@@ -90,13 +94,23 @@ pmf = sample_infer t (int 1000)
 
 exact = solve_tree ((\(Lang.EVal (Lang.VBool b)) -> b) <$> t)
 
--- List-library functions
+-- Library functions
 
-len :: (Show a, Typeable a) => Exp ([a] -> Integer)
-len = Lang.EVal $ Lang.VPrim f
-  where
-    f :: Val [a] -> InterpM (Exp Integer)
-    f Lang.VNil = Prelude.return 0
-    f (Lang.VCons _ l) =
-      let n = len # Lang.EVal l
-      in Prelude.return $ n + (1 :: Exp Integer)
+sum :: Exp [Double] -> Exp Double
+sum vs = 
+  foldleft
+  # Lang.EPair vs 
+      (pair (0 :: Exp Double)
+            (fun ("p" :: Lang.Name (Double, Double))
+               $ (fst ("p" :: Exp (Double, Double)))
+                  + (snd ("p" :: Exp (Double, Double)))))
+
+all :: Exp [Bool] -> Exp Bool -- Exp ([Bool] -> Bool)
+all l = 
+  foldleft
+  # Lang.EPair l 
+      (pair (Lang.EVal true)
+            (fun ("p" :: Lang.Name (Bool, Bool))
+               $ (fst ("p" :: Exp (Bool, Bool)))
+                  && (snd ("p" :: Exp (Bool, Bool)))))
+

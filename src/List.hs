@@ -31,6 +31,20 @@ map = EVal $ VPrim f
     f (VPair _ (VDist _)) = error "map: expected list"
     f (VDist _) = error "map: expected list"
 
+drop :: (Show a, Typeable a, Eq a, Repr m g) =>
+       Exp m g ((Integer, [a]) -> [a])
+drop = EVal $ VPrim f
+  where
+    f :: (Show a, Typeable a, Eq a, Repr m g) =>
+         Val m g (Integer, [a]) -> m (Exp m g [a])
+    f (VPair (VInteger 0) _) = return $ EVal VNil
+    f (VPair (VInteger n) VNil) = error $ "drop: can't drop " ++ show n ++ " elements"
+    f (VPair (VInteger n) (VCons x l)) = do
+      l' <- f (VPair (VInteger (n - 1)) l)
+      return $ ECons (EVal x) l'
+    f (VPair _ (VDist _)) = error "drop: expected list"
+    f (VDist _) = error "drop: expected list"
+
 -- Curried version of map.
 map' :: (Show a, Typeable a, Eq b, Show b, Typeable b, Repr m g) =>
        Exp m g ((a -> b) -> [a] -> [b])

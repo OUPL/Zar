@@ -4,7 +4,8 @@
            , TypeSynonymInstances
            , FlexibleInstances
            , DataKinds
-           , FlexibleContexts #-}
+           , FlexibleContexts
+           , MultiParamTypeClasses #-}
 
 module Syntax where
 
@@ -94,8 +95,11 @@ nil = VNil
 cons :: (Eq a, Show a, Typeable a) => Val a -> Val [a] -> Val [a]
 cons = VCons
 
-pair :: (Eq a, Show a, Eq b, Show b) => Val a -> Val b -> Val (a, b)
-pair = VPair
+class HasPair a b c where
+  pair :: a -> b -> c
+
+instance (Eq a, Show a, Eq b, Show b) => HasPair (Val a) (Val b) (Val (a, b)) where
+  pair = VPair
 
 lam :: (Show a, Typeable a, Eq b, Show b) => Name a -> Exp b -> Val (a -> b)
 lam = VLam
@@ -154,6 +158,17 @@ fun = ELam
 unif :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp (Tree a)
 unif = EUniform
 
+instance (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b)
+         => HasPair (Exp a) (Exp b) (Exp (a,b)) where
+  pair = EPair
+
+fst :: (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b) => Exp (a, b) -> Exp a
+fst = EUnop UFst
+
+snd :: (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b) => Exp (a, b) -> Exp b
+snd = EUnop USnd
+
+
 {-- COMMANDS --}
 
 skip :: Com St
@@ -198,22 +213,4 @@ head def l = destruct l def (ELam "x" $ ELam "xs" "x")
 
 tail :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp [a]
 tail l = destruct l ENil (ELam "x" $ ELam "xs" "xs")
-
-class HasSum a where
-  sum :: Exp ([a] -> a)
-
-instance HasSum Double where
-  sum = "sum_float"
-
-class HasMap a where
-  map :: Exp ((a -> a, [a]) -> [a])
-
-instance HasMap Double where
-  map = "map_float"
-
-class HasAll a where
-  all :: Exp ((a -> Bool, [a]) -> Bool)
-
-instance HasAll Double where
-  all = "all_float"
 
