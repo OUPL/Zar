@@ -132,7 +132,9 @@ solve_equations = go . sort
   where
     go :: [Equation] -> Equation
 
-    go [] = error "internal error in LinEq:solve_equations" --note(jgs): fix
+    -- Can't solve if there are no equations.
+    go [] = error "internal error in LinEq:solve_equations"
+    
     go [eq] = simplify_equation eq
     go (Equation (x, terms) : eqs) =
       go $ simplify_equation . subst_equation x terms <$> eqs
@@ -149,6 +151,10 @@ add_terms ((c, Nothing) : tms) = add_terms tms >>= return . (c +)
 add_terms ((_, Just _) : _) = Nothing
 
 infer :: Tree Bool -> Maybe Rational
+infer (Leaf True) = Just 1
+infer (Leaf False) = Just 0
+-- If the tree has at least one split node, then the list of generated
+-- equations will be non-empty and safe to pass to the solver.
 infer t = add_terms tms
   where Equation (_, tms) =
           solve_equations $ equations_of_ltree $ ltree_of_tree t

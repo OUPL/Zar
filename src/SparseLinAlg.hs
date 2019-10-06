@@ -10,7 +10,7 @@ import Numeric.LinearAlgebra.Sparse
 import LinEq (Coeff, Var, Equation(..), remove_term, combine_terms, ltree_of_tree, equations_of_ltree)
 import Sexp 
 import Tree
-import Util (debug, tupleFun)
+import Util (debug)
 
 -- Here our equations have a slightly different form, where the LHS is
 -- a linear combination of the variables and the RHS is a single
@@ -80,13 +80,12 @@ solve_system_gmres mat rhs =
   --   n = nrows mat -- should also be the length of the rhs vector
 
 solve_tree :: Tree Bool -> IO (SpVector Double)
--- solve_tree = solve_system_gmres . tree_constraint_matrix
+solve_tree (Leaf b) = return $ fromListDenseSV 1 [if b then 1.0 else 0.0]
 solve_tree t =
   let lt = ltree_of_tree t
       eqs = sort $ equations_of_ltree lt
       mateqs = mateq_of_equation <$> eqs
-      -- (mat, rhs) = (matrix_of_mateqs mateqs, rhs_of_mateqs mateqs)
-      (mat, rhs) = tupleFun matrix_of_mateqs rhs_of_mateqs mateqs in
+      (mat, rhs) = (matrix_of_mateqs mateqs, rhs_of_mateqs mateqs) in
     debug ("eqs: " ++ show eqs) $
     debug ("mateqs: " ++ show mateqs) $
     debug ("ltree: " ++ toSexp lt) $ do
