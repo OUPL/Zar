@@ -152,6 +152,17 @@ get x (SomeNameVal y v : rest) =
       if x == y' then Just v' else get x rest
     _ -> get x rest
 
+envUpd :: (Typeable m, Typeable g, Show a, Typeable a) =>
+          Name a -> Exp m g a -> Env m g -> Env m g
+envUpd x v [] = [SomeNameExp x v]
+envUpd x v (SomeNameExp x' v' : env) =
+  if fst x == fst x' then
+    case nameEqT x x' of
+      Just Refl -> SomeNameExp x v : env
+      Nothing -> error ""
+  else
+    SomeNameExp x' v' : envUpd x v env
+
 envGet :: (Typeable m, Typeable g, Typeable a) =>
           Name a -> Env m g -> Maybe (Exp m g a)
 envGet _ [] = Nothing
@@ -425,7 +436,11 @@ subst x e (ELam y body) =
       subst x e body
 subst x e (ECom args com) = ECom (SomeNameExp x e : args) com
 subst x e (ECond b e1 e2) = ECond (subst x e b) (subst x e e1) (subst x e e2)
-subst _ _ e = e
+subst _ _ e@(EVal _) = e
+subst x e (EPair e1 e2) = EPair (subst x e e1) (subst x e e2)
+subst _ _ ENil = ENil
+subst x e (EUniform l) = EUniform (subst x e l)
+subst _ _ e@(EPrim _) = e
 
 
 -- | The following is mostly just used for typechecking but is

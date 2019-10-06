@@ -177,7 +177,11 @@ eval (EApp f e) st = do
   f' <- eval f st
   v <- eval e st
   case f' of
-    VLam x body -> eval (subst x (EVal v) body) st
+    VLam x body ->
+      -- Extend the local state with a binding for the variable.
+      -- eval body (upd x v st)
+      -- Substitute v for x in body, then evaluate.
+      eval (subst x (EVal v) body) st
     VPrim f0 -> f0 v >>= flip eval st
 
 eval (ECom args com) st = do
@@ -291,5 +295,4 @@ runInterp :: (Eq a, Show a) => Env InterpM Tree -> Com a -> Tree St -> (Tree a, 
 runInterp env c t = runInterpM (env, 0) (-1) (interp' c t)
 
 runInterp' :: (Eq a, Show a) => Env InterpM Tree -> Com a -> Tree a
-runInterp' env c =
-  set_label 0 $ fst $ runInterp env c (Leaf empty)
+runInterp' env c = set_label 0 $ fst $ runInterp env c (Leaf empty)
