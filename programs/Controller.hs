@@ -80,7 +80,7 @@ main = do
     i     <-- i + (1 :: Exp Integer)
     skip
 
-  return $ within_range (drop # pair 5 vs) vr 0.5
+  return $ within_range (drop # pair 5 vs) vr 0.1 
 
 t = Lang.interp Lang.initEnv $ runSyntax main
 
