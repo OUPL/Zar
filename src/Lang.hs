@@ -22,6 +22,8 @@
 
 module Lang where
 
+import GHC.Exts
+
 import Data.Proxy
 import Data.Typeable
 
@@ -68,6 +70,20 @@ data Val (m :: * -> *) (g :: * -> *) (a :: *) where
   --           (forall a b. Val m g a -> m (Exp m g b)) -> Val m g (c -> d)
   -- VPrim' :: (Show c, Typeable c) =>
   --           (forall a b. Val m g a -> m (Exp m g b)) -> Val m g (c -> d)
+
+-- The following instance might be in the future (but is not currently)
+-- used to provide native-Haskell List syntax in Syntax.hs.
+instance (Eq a, Show a, Typeable a) => IsList (Val m g [a]) where
+  type Item (Val m g [a]) = Val m g a
+
+  fromList [] = VNil
+  fromList (x : l) = VCons x (fromList l)
+
+  toList VNil = []
+  toList (VCons x l) = x : toList l
+  toList v = error $ "toList: " ++ show v ++ " not a list value"
+
+  fromListN _ l = fromList l 
 
 -- deriving instance Typeable Val
 

@@ -1,6 +1,8 @@
 {-# LANGUAGE RebindableSyntax
            , OverloadedStrings
            , GADTs
+           , TypeFamilies
+           , GeneralizedNewtypeDeriving  
            , TypeSynonymInstances
            , FlexibleInstances
            , DataKinds
@@ -31,6 +33,9 @@ import           Prelude hiding
 
 import qualified Prelude
 
+import           Control.Monad.State hiding (get)
+import qualified Control.Monad.State as S (get)
+
 import           Data.Typeable
 import           Data.String( IsString(..) )
 
@@ -43,7 +48,31 @@ type Com = Lang.Com InterpM Tree
 type Exp = Lang.Exp InterpM Tree
 type St  = Lang.St  InterpM Tree
 type Val = Lang.Val InterpM Tree
-type Env = [Lang.SomeNameExp InterpM Tree]
+--type Env = [Lang.SomeNameExp InterpM Tree]
+
+newtype SyntaxM a = SyntaxM { unSyntaxM :: State Integer a }
+  deriving (Functor)
+
+instance Applicative SyntaxM where
+  pure = SyntaxM . pure
+  SyntaxM f <*> SyntaxM x = SyntaxM $ f <*> x
+
+instance Monad SyntaxM where
+  (>>=) (SyntaxM m) g = SyntaxM $ (Prelude.>>=) m (unSyntaxM . g)
+  return = pure
+
+instance MonadState Integer SyntaxM where
+  get = SyntaxM S.get
+  put s = SyntaxM $ put s
+
+freshVar :: String -> SyntaxM (Name a)
+freshVar x =
+  (Prelude.>>=) S.get $ \counter ->
+  (Prelude.>>=) (put ((Prelude.+) counter 1)) $ \_ -> 
+  Prelude.return $ ("_" ++ x ++ show counter, Proxy)
+
+runSyntax :: SyntaxM a -> a
+runSyntax m = Prelude.fst (runState (unSyntaxM m) 0)
 
 {-- VALUES --}
 
@@ -68,6 +97,9 @@ fromRational = fromR
 class FromInteger a where
   fromI :: Integer -> a
 
+instance FromInteger Integer where
+  fromI = Prelude.fromInteger
+
 instance FromInteger (Val Integer) where
   fromI = VInteger
 
@@ -80,26 +112,8 @@ instance FromInteger (Exp Double) where
 fromInteger :: FromInteger a => Integer -> a
 fromInteger = fromI
 
-true :: Val Bool
-true = VBool True
-
-false :: Val Bool
-false = VBool False
-
 dist :: (Eq a, Show a) => Tree (Exp a) -> Val (Tree a)
 dist = VDist
-
-nil :: (Eq a, Show a) => Val [a]
-nil = VNil
-
-cons :: (Eq a, Show a, Typeable a) => Val a -> Val [a] -> Val [a]
-cons = VCons
-
-class HasPair a b c where
-  pair :: a -> b -> c
-
-instance (Eq a, Show a, Eq b, Show b) => HasPair (Val a) (Val b) (Val (a, b)) where
-  pair = VPair
 
 lam :: (Show a, Typeable a, Eq b, Show b) => Name a -> Exp b -> Val (a -> b)
 lam = VLam
@@ -117,6 +131,12 @@ instance IsString (Exp a) where
 
 val :: Val a -> Exp a
 val = EVal
+
+true :: Exp Bool
+true = val $ VBool True
+
+false :: Exp Bool
+false = val $ VBool False
 
 destruct :: (Show a, Typeable a, Show b, Typeable b) =>
             Exp [a] -> Exp b -> Exp (a -> [a] -> b) -> Exp b
@@ -158,9 +178,9 @@ fun = ELam
 unif :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp (Tree a)
 unif = EUniform
 
-instance (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b)
-         => HasPair (Exp a) (Exp b) (Exp (a,b)) where
-  pair = EPair
+pair :: (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b) => 
+        Exp a -> Exp b -> Exp (a,b)
+pair = EPair
 
 fst :: (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b) => Exp (a, b) -> Exp a
 fst = EUnop UFst
@@ -168,34 +188,61 @@ fst = EUnop UFst
 snd :: (Typeable a, Eq a, Show a, Typeable b, Eq b, Show b) => Exp (a, b) -> Exp b
 snd = EUnop USnd
 
+nil :: (Typeable a, Eq a, Show a) => Exp [a]
+nil = ENil 
+
+cons :: (Typeable a, Eq a, Show a) => Exp a -> Exp [a] -> Exp [a]
+cons = ECons
 
 {-- COMMANDS --}
 
-skip :: Com St
-skip = Skip
+skip :: SyntaxM (Com St)
+skip = Prelude.return Skip
 
-infix 3 <-- 
-(<--) :: (Show a, Typeable a) => Name a -> Exp a -> Com St
-(<--) = Assign
+class SampleAssign a b where
+  sample_assign :: Name a -> Exp b -> Com St
 
-(>>) :: Com St -> Com a -> Com a
-(>>) = Seq
+instance (Show a, Typeable a) => SampleAssign a (Tree a) where
+  sample_assign = Sample
 
-ifThenElse :: (Show a, Typeable a) => Exp Bool -> Com a -> Com a -> Com a
-ifThenElse = Ite
+instance (Show a, Typeable a) => SampleAssign a a where
+  sample_assign = Assign
 
-infix 3 <~~ 
-(<~~) :: (Show a, Typeable a) => Name a -> Exp (Tree a) -> Com St
-(<~~) = Sample
+(>>=) :: (Show a,Typeable a, Show b,Typeable b, Show c,Typeable c, SampleAssign b a) => 
+         Exp a -> (Exp b -> SyntaxM (Com c)) -> SyntaxM (Com c)
+(>>=) e f =
+  (Prelude.>>=) (freshVar "internal") $ \x ->
+  (Prelude.>>=) (f (Lang.EVar x)) $ \k -> 
+  Prelude.return $ Seq (sample_assign x e) k
 
-observe :: Exp Bool -> Com St
-observe = Observe
+(>>) :: (Show a, Typeable a) => SyntaxM (Com St) -> SyntaxM (Com a) -> SyntaxM (Com a)
+(>>) m1 m2 =
+  (Prelude.>>=) m1 $ \c1 ->
+  (Prelude.>>=) m2 $ \c2 ->  
+  Prelude.return $ Seq c1 c2
 
-return :: (Show a, Typeable a) => Exp a -> Com (Exp a)
-return = Return
+infix 3 <--
+(<--) :: (Show a, Typeable a) => Exp a -> Exp a -> SyntaxM (Com St)
+(<--) (EVar x) e = Prelude.return $ Assign x e
+(<--) x        _ = error $ "tried to assign nonvariable expression " ++ show x
 
-while :: Exp Bool -> Com St -> Com St
-while = While
+ifThenElse :: (Show a, Typeable a) =>
+              Exp Bool -> SyntaxM (Com a) -> SyntaxM (Com a) -> SyntaxM (Com a)
+ifThenElse e m1 m2 =
+  (Prelude.>>=) m1 $ \c1 ->
+  (Prelude.>>=) m2 $ \c2 ->
+  Prelude.return $ Ite e c1 c2
+
+observe :: Exp Bool -> SyntaxM (Com St)
+observe e = Prelude.return $ Observe e
+
+return :: (Show a, Typeable a) => Exp a -> SyntaxM (Com (Exp a))
+return e = Prelude.return $ Return e
+
+while :: Exp Bool -> SyntaxM (Com St) -> SyntaxM (Com St)
+while e m =
+  (Prelude.>>=) m $ \c -> 
+  Prelude.return $ While e c
 
 {-- PRELUDE HACKS --}
 
@@ -214,3 +261,5 @@ head def l = destruct l def (ELam "x" $ ELam "xs" "x")
 tail :: (Eq a, Show a, Typeable a) => Exp [a] -> Exp [a]
 tail l = destruct l ENil (ELam "x" $ ELam "xs" "xs")
 
+float_of_int :: Exp (Integer -> Double)
+float_of_int = "float_of_int"

@@ -1,4 +1,4 @@
-{-# LANGUAGE RebindableSyntax, OverloadedStrings, GADTs, DataKinds #-}
+{-# LANGUAGE RebindableSyntax, OverloadedStrings, GADTs, DataKinds, ScopedTypeVariables #-}
 
 module Controller where
 
@@ -51,8 +51,8 @@ import SparseLinAlg
 pi :: Exp Double -> Exp Double -> Exp [Double] -> Exp Double
 pi k vr vs =
   k * ( (vr - head 0.0 vs) +
-        (sum (map # Lang.EPair (fun ("v" :: Lang.Name Double) $ vr - "v") vs))
-          / ("float_of_int" # (len # vs)))
+        (sum (map # pair (fun ("v" :: Lang.Name Double) $ vr - "v") vs))
+          / (float_of_int # (len # vs)))
 
 plant :: Exp Double -> Exp Double
 plant u = u
@@ -60,34 +60,29 @@ plant u = u
 within_range :: Exp [Double] -> Exp Double -> Exp Double -> Exp Bool
 within_range vs vr eps =
   all (map #
-    Lang.EPair (fun ("v" :: Lang.Name Double) $ (vr - eps <= "v") && ("v" <= vr + eps))
-               vs)
+    pair (fun ("v" :: Lang.Name Double) $ (vr - eps <= "v") && ("v" <= vr + eps))
+         vs)
 
-main :: Com (Exp Bool)
+main :: SyntaxM (Com (Exp Bool))
 main = do
-  "vr" <-- (0.5 :: Exp Double)
+  vr <- (0.5 :: Exp Double)
+  k  <- unif (cons (0.5 :: Exp Double) $ cons 1.0 $ cons 1.5 nil)
+  i  <- (0 :: Exp Integer)
+  v  <- (0.0 :: Exp Double)
+  vs <- cons (v :: Exp Double) nil
 
-  "k"  <~~ unif (val $ cons (0.5 :: Val Double) $ cons 1.0 $ cons 1.5 nil)
+  while (i < 20) $ do
+    u     <- pi vr k vs
+    dv    <- plant u
+    new_v <- dv + v
+    v     <-- new_v
+    vs    <-- cons new_v vs
+    i     <-- i + (1 :: Exp Integer)
+    skip
 
-  "i"  <-- (0 :: Exp Integer)
-  "v"  <-- (0.0 :: Exp Double)
-  "vs" <-- (Lang.ECons "v" Lang.ENil :: Exp [Double])
+  return $ within_range (drop # pair 5 vs) vr 0.5
 
-  while ("i" < (20 :: Exp Integer)) $ do
-    "u"     <-- pi "vr" "k" "vs"
-    "dv"    <-- plant "u"
-    "new_v" <-- "dv" + ("v" :: Exp Double)
-    "v"     <-- ("new_v" :: Exp Double)
-    "vs"    <-- Lang.ECons ("new_v" :: Exp Double) "vs"
-    "i"     <-- "i" + (1 :: Exp Integer)
-
-  return $ within_range (drop # Lang.EPair 5 "vs") "vr" 0.5
-
-main2 :: Com (Exp Bool)
-main2 = do
-  return $ all $ Lang.ECons (Lang.EVal true) Lang.ENil
-
-t = Lang.interp Lang.initEnv main
+t = Lang.interp Lang.initEnv $ runSyntax main
 
 pmf :: IO [(Exp Bool, Double)]
 pmf = sample_infer t (int 1000)
@@ -99,7 +94,7 @@ exact = solve_tree ((\(Lang.EVal (Lang.VBool b)) -> b) <$> t)
 sum :: Exp [Double] -> Exp Double
 sum vs = 
   foldleft
-  # Lang.EPair vs 
+  # pair vs 
       (pair (0 :: Exp Double)
             (fun ("p" :: Lang.Name (Double, Double))
                $ (fst ("p" :: Exp (Double, Double)))
@@ -108,8 +103,8 @@ sum vs =
 all :: Exp [Bool] -> Exp Bool -- Exp ([Bool] -> Bool)
 all l = 
   foldleft
-  # Lang.EPair l 
-      (pair (Lang.EVal true)
+  # pair l 
+      (pair true
             (fun ("p" :: Lang.Name (Bool, Bool))
                $ (fst ("p" :: Exp (Bool, Bool)))
                   && (snd ("p" :: Exp (Bool, Bool)))))
