@@ -50,19 +50,19 @@ pot r theta = r * theta
 
 main :: SyntaxM (Com (Exp Double))
 main = do
-  -- pot_r: The unknown resistance of the potentiometer
+  -- pot_r: Sample uniformly the pot's unknown resistance coefficient (\in {1,2,5,10})
   pot_r  <- unif $ cons (1.0 :: Exp Double) $ cons 2.0 $ cons 5.0 $ cons 10.0 $ nil
 
-  -- theta: The (controlled) measurement angle
+  -- theta: Sample the (controlled) measurement angle (\in {0.25,0.5,0.75})
   theta  <- unif $ cons (0.25:: Exp Double) $ cons 0.50$ cons 0.75$ nil
 
-  -- r_meas: Measured resistance
+  -- r_meas: Measure the resistance
   r_meas <- pot pot_r theta
 
-  -- One experiment: theta=0.25 gives r_meas=2.5
+  -- Perform one experiment: setting theta=0.25 gives r_meas=2.5
   observe $ (theta == (0.25 :: Exp Double)) && (r_meas == (2.5 :: Exp Double))
 
-  -- Given the experiment, return the likelihoods of the resistance coefficient.
+  -- Given the experiment, return the likelihoods of the possible resistance coefficients.
   -- (In this case, pot_r=10.0 with probability 1.)
   return pot_r
 
