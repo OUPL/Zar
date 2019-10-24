@@ -15,7 +15,7 @@ To use the Z3 backend (disabled at the moment), build and install: https://githu
 ```
 stack build && stack exec zar-exe programs/fair_coin.zar
 ```
-### Example 1
+### Example
 
 As an example of a Zar program, consider the following loop that simulates a fair coin from a biased one:
 
