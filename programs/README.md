@@ -35,5 +35,4 @@
 ### Functional Limbo (Possibly Non-terminating):
 * dynkin-net&#46;ky
 * dynkin&#46;ky
-* fair_coin&#46;ky
 
