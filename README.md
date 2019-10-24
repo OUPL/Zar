@@ -13,8 +13,60 @@ To use the Z3 backend (disabled at the moment), build and install: https://githu
 ## Quickstart
 
 ```
-stack build && stack exec zar-exe programs/test1.ky
+stack build && stack exec zar-exe programs/fair_coin.zar
 ```
+### Example 1
+
+As an example of a Zar program, consider the following loop that simulates a fair coin from a biased one:
+
+```
+#File: programs/fair_coin.zar
+main:
+  p <- 1/3 #p can be any Rational in (0, 1)
+  x <- false
+  y <- false
+  while x = y:
+    x <~ bernoulli(p)
+    y <~ bernoulli(p)
+  return x
+```
+
+One can run this program by doing
+
+```
+> stack exec zar-exe programs/fair_coin.zar 
+```
+
+from the root of the repository.
+
+Zar's surface syntax makes a distinction between a functional expression language and a conventional imperative probabilistic command language. For example, the following expressions over basic datatypes like lists are currently definable: 
+
+```
+func head (l : [int]) -> int :
+  destruct(l, (0-1), \x:int. \xs:[int]. x)
+
+func tail (l : [int]) -> [int] :
+  destruct(l, []:int, \x:int. \xs:[int]. xs)
+
+func concat (l1 : [int], l2 : [int]) -> [int] :
+  destruct(l1, l2, \x:int. \xs:[int]. x :: concat(xs, l2))
+
+func reverse (l : [int]) -> [int] :
+  destruct(l, []:[int], \x:int. \xs:[int]. concat(reverse(xs), [x]:[int]))
+
+func range (n : int) -> [int] :
+  if n <= 0 then [] : [int] else concat(range(n-1), [n-1]:[int])
+  
+...
+```
+
+and can be used in the context of probabilistic commands such as: 
+
+```
+x <~ uniform(range(10))
+```
+
+As an alternative frontend, Zar can be used like an embedded DSL in Haskell (cf. `programs/Controller.hs` for an example).
 
 ## Directory Structure
 
