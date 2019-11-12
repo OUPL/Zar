@@ -44,8 +44,8 @@ ground_hs_sat (Geq e1 e2) = ground_eval e1 >= ground_eval e2
 
 subst :: Name -> Exp -> Exp -> Exp
 subst x enew (Id y) | x==y      = enew
-subst x enew (Id y) | otherwise = Id y
-subst x enew (Val i) = Val i
+subst _ _    (Id y) | otherwise = Id y
+subst _ _    (Val i) = Val i
 subst x enew (Inc e) = Inc $ subst x enew e
 
 subst_hs :: Name -> Exp -> Halfspace -> Halfspace
@@ -90,7 +90,7 @@ wpe :: EffTree Com Regions -> Regions -> Rational
 wpe Leaf rs = iverson $ regions_sat rs
 wpe (Node (eff1, t1) (eff2, t2)) rs = 
   (1/2)*(guard (wp eff1 rs) $ wpe t1) + (1/2)*(guard (wp eff2 rs) $ wpe t2)
-  where guard rs z = if regions_sat rs then z rs else 0
+  where guard rs0 z = if regions_sat rs0 then z rs0 else 0
 
 ex1 :: EffTree Com Regions 
 ex1 = Node (Assign x (Inc (Id x)), ex1) (Assign x (Id x), Leaf)
