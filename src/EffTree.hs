@@ -4,102 +4,147 @@
 {-# LANGUAGE FlexibleInstances #-}
 module EffTree where
 
-class Pred p where
-  inter :: p -> p -> p
-  union :: p -> p -> p
+--import           Control.Applicative
+--import           Control.Monad ( join )
+import           Control.Monad.State 
+--import qualified Data.Traversable as T
+import qualified Data.Map.Strict as M
 
-class Pred p => Eff e p where
-  wp :: e -> p -> p
+import           Z3.Monad
 
-data EffTree e p where
-  Leaf :: EffTree e p
-  Node :: Eff e p => (e, EffTree e p) -> (e, EffTree e p) -> EffTree e p
+data Tree eff =
+    Leaf 
+  | Node eff (Tree eff) eff (Tree eff)
 
 type Name = String
 
-data Exp = Id Name | Val Int | Inc Exp
-  deriving (Show)
+data Val = VInt Integer
 
--- (TODO) This and other functions should be tail recursive.
-vars :: Exp -> [Name]
-vars (Id n)  = [n]
-vars (Val _) = []
-vars (Inc e) = vars e
+data Exp = EVar Name | EVal Val | EInc Exp
 
-ground_eval :: Exp -> Int
-ground_eval (Id x)  = error $ "expected " ++ x ++ " a ground expression"
-ground_eval (Val i) = i
-ground_eval (Inc e) = 1 + ground_eval e
+data Pred = PLe Exp Exp | PAnd Pred Pred
 
-data Halfspace = Leq Exp Exp | Geq Exp Exp
-  deriving (Show)
+data Eff = Upd Name Exp | Skip
 
-hs_vars :: Halfspace -> [Name]
-hs_vars (Leq e1 e2) = vars e1 ++ vars e2
-hs_vars (Geq e1 e2) = vars e1 ++ vars e2
+data Event = SatCheck String
 
-ground_hs_sat :: Halfspace -> Bool
-ground_hs_sat (Leq e1 e2) = ground_eval e1 <= ground_eval e2
-ground_hs_sat (Geq e1 e2) = ground_eval e1 >= ground_eval e2
+instance Show Event where
+  show (SatCheck s) = "sat: " ++ s
 
-subst :: Name -> Exp -> Exp -> Exp
-subst x enew (Id y) | x==y      = enew
-subst _ _    (Id y) | otherwise = Id y
-subst _ _    (Val i) = Val i
-subst x enew (Inc e) = Inc $ subst x enew e
+printEvents :: [Event] -> IO ()
+printEvents es = mapM (putStrLn . show) es >> return ()
 
-subst_hs :: Name -> Exp -> Halfspace -> Halfspace
-subst_hs x enew (Leq e1 e2) = Leq (subst x enew e1) (subst x enew e2)
-subst_hs x enew (Geq e1 e2) = Geq (subst x enew e1) (subst x enew e2)
+data InterpState =
+  InterpState {
+    -- updates(x) = i: Variable x has been updated i times.
+    updates :: M.Map String Int, 
+    trace :: [Event] }
 
--- Conjunction of halfspaces
-type Region = [Halfspace]
+initInterpState = InterpState M.empty []
 
-subst_region :: [(Name, Exp)] -> Region -> Region
-subst_region ss r = foldl (\r0 (x, e) -> map (subst_hs x e) r0) r ss
+type InterpM = StateT InterpState Z3
 
--- A region is satisfiable iff it has a satisfiable ground substitution
--- (TODO) The entire backend should be built against Z3; this is just an experiment.
-region_sat :: Region -> Bool
-region_sat r =
-  any (\ss -> all ground_hs_sat $ subst_region ss r) substs
-  where
-    substs = [ [(x, v) | v <- vals] | x <- region_vars ]
-    region_vars = concatMap hs_vars r
-    vals = [ Val i | i <- [0..9] ]
+runInterpM :: InterpM a -> IO a
+runInterpM m = do
+  (a, s) <- evalZ3 $ runStateT m initInterpState
+  printEvents $ trace s
+  return a
 
--- Disjunction of regions
-type Regions = [Region]
+record :: Event -> InterpM ()
+record ev = modify (\s -> InterpState (updates s) (ev : trace s))
 
-regions_sat :: Regions -> Bool
-regions_sat = any region_sat 
+varIdx :: String -> InterpM Int
+varIdx x = do
+  s <- get
+  case M.lookup x (updates s) of
+   Nothing -> return 0
+   Just n -> return n   
 
-instance Pred Regions where
-  inter rs1 rs2 = [ r1 ++ r2 | r1 <- rs1, r2 <- rs2 ]
-  union rs1 rs2 = rs1 ++ rs2
+incVarIdx :: String -> InterpM ()
+incVarIdx x =
+  modify (\s -> InterpState (M.insertWith (+) x 1 (updates s)) (trace s))
 
-data Com = Assign Name Exp
+identOf :: String -> InterpM String
+identOf x = do 
+  n <- varIdx x
+  return $ x ++ if n > 0 then show n else ""
 
-instance Eff Com Regions where
-  wp (Assign x e) rs = map (subst_region [(x, e)]) rs
+varOf :: String -> InterpM AST
+varOf x = do
+  _x <- identOf x
+  sx <- lift $ mkStringSymbol _x
+  lift $ mkIntVar sx
 
-iverson :: Bool -> Rational
-iverson b = if b then 1 else 0
+class ToZ3 a where
+  toZ3 :: a -> InterpM AST
 
-wpe :: EffTree Com Regions -> Regions -> Rational
-wpe Leaf rs = iverson $ regions_sat rs
-wpe (Node (eff1, t1) (eff2, t2)) rs = 
-  (1/2)*(guard (wp eff1 rs) $ wpe t1) + (1/2)*(guard (wp eff2 rs) $ wpe t2)
-  where guard rs0 z = if regions_sat rs0 then z rs0 else 0
+instance ToZ3 Val where
+  toZ3 (VInt i) = lift $ mkInteger i
 
-ex1 :: EffTree Com Regions 
-ex1 = Node (Assign x (Inc (Id x)), ex1) (Assign x (Id x), Leaf)
-  where x = "x"
+instance ToZ3 Exp where
+  toZ3 (EVar x) = varOf x
+  toZ3 (EVal v) = toZ3 v
+  toZ3 (EInc e) = do
+    _e <- toZ3 e
+    one <- lift $ mkInteger 1
+    lift $ mkAdd [_e, one]
 
-ex1_post :: Regions 
-ex1_post = [[Leq (Id "x") (Val 3)]]
-  
+instance ToZ3 Pred where 
+  toZ3 (PLe e1 e2) = do
+    _e1 <- toZ3 e1
+    _e2 <- toZ3 e2
+    lift $ mkLe _e1 _e2
+  toZ3 (PAnd p1 p2) = do
+    _p1 <- toZ3 p1
+    _p2 <- toZ3 p2
+    lift $ mkAnd [_p1, _p2]
 
-  
-           
-  
+printZ3 :: ToZ3 a => a -> IO ()
+printZ3 a = do
+  ast <- runInterpM $ toZ3 a
+  s <- evalZ3 $ astToString ast
+  putStrLn s
+
+sat :: AST -> InterpM Bool
+sat a = do
+  _a <- lift $ astToString a
+  record $ SatCheck _a
+  -- START fresh Z3 context
+  lift push
+  lift $ assert a
+  r <- lift check
+  lift $ pop 1
+  -- END fresh Z3 context
+  case r of
+   Sat -> return True
+   Unsat -> return False
+   Undef -> error "sat: undefined"
+
+wp :: Eff -> Pred -> AST -> InterpM AST
+wp (Upd x e) base q = do
+  _e <- toZ3 e
+  incVarIdx x
+  _x <- toZ3 $ EVar x
+  eq <- lift $ mkEq _x _e
+  _base <- toZ3 base
+  p <- lift $ mkAnd [eq, _base, q]
+  return p
+wp Skip _ q = return q  
+
+wpe :: Tree Eff -> Pred -> AST -> InterpM Rational
+wpe Leaf _ q = do
+  b <- sat q
+  return $ if b then 1 else 0
+wpe (Node eff1 t1 eff2 t2) base q = do
+  q1 <- wp eff1 base q
+  q2 <- wp eff2 base q
+  b1 <- sat q1
+  b2 <- sat q2
+  r1 <- if b1 then wpe t1 base q1 else return 0
+  r2 <- if b2 then wpe t2 base q2 else return 0
+  return $ (1/2)*r1 + (1/2)*r2
+
+tree1 :: Tree Eff
+tree1 = Node (Upd "x" (EInc (EVar "x"))) tree1 Skip Leaf
+post1 = PAnd (PLe (EVar "x") (EVal $ VInt 3)) (PLe (EVal $ VInt 0) (EVar "x"))
+ex1 = runInterpM $ toZ3 post1 >>= wpe tree1 post1
