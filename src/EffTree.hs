@@ -18,13 +18,23 @@ data Tree eff =
 
 type Name = String
 
-data Val = VInt Integer
+data Val = VInt Integer | VArr Val
 
-data Exp = EVar Name | EVal Val | EInc Exp
+data Ty = TInt | TIntArr
+
+instance Show Ty where
+  show TInt = "i"
+  show TIntArr = "iarr"
+
+data Exp = EVar Name Ty | EVal Val | EInc Exp | EGet Exp Exp
 
 data Pred = PLe Exp Exp | PAnd Pred Pred
 
-data Eff = Upd Name Exp | Skip
+-- Predicate sugar:
+peq :: Exp -> Exp -> Pred
+peq e1 e2 = PAnd (PLe e1 e2) (PLe e2 e1)
+
+data Eff = Upd Name Ty Exp | Store Name Exp Exp Exp | Seq Eff Eff | Skip
 
 data Event = SatCheck String
 
@@ -64,30 +74,43 @@ incVarIdx :: String -> InterpM ()
 incVarIdx x =
   modify (\s -> InterpState (M.insertWith (+) x 1 (updates s)) (trace s))
 
-identOf :: String -> InterpM String
-identOf x = do 
+identOf :: String -> Ty -> InterpM String
+identOf x t = do 
   n <- varIdx x
-  return $ x ++ if n > 0 then show n else ""
+  return $ '_' : show t ++ '_' : x ++ if n > 0 then show n else ""
 
-varOf :: String -> InterpM AST
-varOf x = do
-  _x <- identOf x
+varOf :: String -> Ty -> InterpM AST
+varOf x t = do
+  _x <- identOf x t
   sx <- lift $ mkStringSymbol _x
-  lift $ mkIntVar sx
+  case t of
+   TInt -> lift $ mkIntVar sx
+   TIntArr -> do
+     isort <- lift $ mkIntSort
+     asort <- lift $ mkArraySort isort isort
+     lift $ mkVar sx asort
 
 class ToZ3 a where
   toZ3 :: a -> InterpM AST
 
 instance ToZ3 Val where
   toZ3 (VInt i) = lift $ mkInteger i
+  toZ3 (VArr v) = do
+    isort <- lift mkIntSort
+    _v <- toZ3 v
+    lift $ mkConstArray isort _v
 
 instance ToZ3 Exp where
-  toZ3 (EVar x) = varOf x
+  toZ3 (EVar x t) = varOf x t
   toZ3 (EVal v) = toZ3 v
   toZ3 (EInc e) = do
     _e <- toZ3 e
     one <- lift $ mkInteger 1
     lift $ mkAdd [_e, one]
+  toZ3 (EGet earr eidx) = do
+    _earr <- toZ3 earr
+    _eidx <- toZ3 eidx
+    lift $ mkSelect _earr _eidx
 
 instance ToZ3 Pred where 
   toZ3 (PLe e1 e2) = do
@@ -121,14 +144,28 @@ sat a = do
    Undef -> error "sat: undefined"
 
 wp :: Eff -> Pred -> AST -> InterpM AST
-wp (Upd x e) base q = do
+wp (Upd x t e) base q = do
   _e <- toZ3 e
   incVarIdx x
-  _x <- toZ3 $ EVar x
+  _x <- toZ3 $ EVar x t
   eq <- lift $ mkEq _x _e
   _base <- toZ3 base
   p <- lift $ mkAnd [eq, _base, q]
   return p
+wp (Store x earr eidx enew) base q = do
+  _earr <- toZ3 earr
+  _eidx <- toZ3 eidx
+  _enew <- toZ3 enew
+  incVarIdx x
+  _x <- toZ3 $ EVar x TIntArr
+  store <- lift $ mkStore _earr _eidx _enew
+  eq <- lift $ mkEq _x store
+  _base <- toZ3 base
+  p <- lift $ mkAnd [eq, _base, q]
+  return p
+wp (Seq eff1 eff2) base q = do
+  q1 <- wp eff2 base q
+  wp eff1 base q1
 wp Skip _ q = return q  
 
 wpe :: Tree Eff -> Pred -> AST -> InterpM Rational
@@ -145,6 +182,15 @@ wpe (Node eff1 t1 eff2 t2) base q = do
   return $ (1/2)*r1 + (1/2)*r2
 
 tree1 :: Tree Eff
-tree1 = Node (Upd "x" (EInc (EVar "x"))) tree1 Skip Leaf
-post1 = PAnd (PLe (EVar "x") (EVal $ VInt 3)) (PLe (EVal $ VInt 0) (EVar "x"))
+tree1 = Node (Upd "x" TInt (EInc (EVar "x" TInt))) tree1 Skip Leaf
+post1 = PAnd (PLe (EVal $ VInt 0) (EVar "x" TInt)) (PLe (EVar "x" TInt) (EVal $ VInt 7)) 
 ex1 = runInterpM $ toZ3 post1 >>= wpe tree1 post1
+
+tree2 :: Tree Eff
+tree2 =
+  Node
+  (Store "y" (EVal $ VArr $ VInt 0) (EVal $ VInt 0) (EVal $ VInt 1)) Leaf
+  (Store "y" (EVal $ VArr $ VInt 0) (EVal $ VInt 0) (EVal $ VInt 2)) Leaf
+post2 = peq (EGet (EVar "y" TIntArr) (EVal $ VInt 0)) (EVal $ VInt 1)
+ex2 = runInterpM $ toZ3 post2 >>= wpe tree2 post2  
+
