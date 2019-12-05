@@ -1,0 +1,21 @@
+#Example Fig. 1 in Olmedo et al., TOPLAS'18
+#https://www.sciencedirect.com/science/article/pii/S1571066115000808
+
+main:
+  gold <- 0
+  pir <- 1
+  f1 <- 0
+  f2 <- pir
+  removed <- 0
+  is_gold <~ bernoulli(1/2)
+  if is_gold:
+    f1 <- gold
+  else:
+    f1 <- pir
+  b <~ bernoulli(1/2)
+  if b:
+    removed <- f1
+  else:
+    removed <- f2
+  observe(removed = pir)
+  return (f1 = pir)
