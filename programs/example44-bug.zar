@@ -1,0 +1,10 @@
+#Example 4.4 in Olmedo et al., TOPLAS'18
+#https://www.sciencedirect.com/science/article/pii/S1571066115000808
+
+main:
+  a1 <~ bernoulli(1/2)
+  a2 <~ bernoulli(1/2)
+  a3 <~ bernoulli(1/2)
+  observe ((~a1 & ~a2) | (~a1 & ~a3) | (~a2 & ~a3))
+  return (~a1 & ~a2 & ~a3)
+
