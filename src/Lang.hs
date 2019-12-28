@@ -533,7 +533,7 @@ vlist_list (VDist _) = error "internal error in Lang:vlist_list; please report"
 -- interpreting commands in that representation.
 class (Monad m, Typeable m, AllF g) => Repr m g | g -> m where
   primitives :: [(String, SomeTypeVal m g)]
-  interp :: (Eq a, Show a) => Env m g -> Com m g a -> g a
+  interp :: (Eq a, Show a) => Env m g -> Com m g a -> St m g -> g a
 
 -- Initial environment containing primitives.
 initEnv :: Repr m g => Env m g

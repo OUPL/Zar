@@ -6,7 +6,7 @@
 -- | Some inspiration from:
 -- http://augustss.blogspot.com/2009/06/more-llvm-recently-someone-asked-me-on.html
 
-module Tycheck (SomeCom(..), SomeG(..), load_repr) where
+module Tycheck (SomeCom(..), SomeKG(..), load_repr) where
 
 import Control.Monad.Except
 import Control.Monad.Identity
@@ -525,12 +525,16 @@ tycheck prims funcs_dists com =
   runTycheck (initCtx prims) $ tycheckProg funcs_dists com
 
 
-data SomeG m g where
-  SomeG :: forall m g a. (Repr m g, Eq a, Show a, Typeable a) =>
-           Type m g a -> g a -> SomeG m g
+-- data SomeG m g where
+--   SomeG :: forall m g a. (Repr m g, Eq a, Show a, Typeable a) =>
+--            Type m g a -> g a -> SomeG m g
+           
+data SomeKG m g where
+  SomeKG :: forall m g a. (Repr m g, Eq a, Show a, Typeable a) =>
+           Type m g a -> (St m g -> g a) -> SomeKG m g
 
 load_repr :: Repr m g =>
-             Proxy g -> String -> String -> Either String (SomeG m g)
+             Proxy g -> String -> String -> Either String (SomeKG m g)
 load_repr _ filename src =
   let (funcs_dists, main_com) =
         case parse filename src of
@@ -539,4 +543,4 @@ load_repr _ filename src =
     case tycheck primitives funcs_dists main_com of
       Left msg -> Left msg
       Right (es, SomeCom ty tcom) ->
-        Right $ SomeG ty $ interp (initEnv ++ es) tcom
+        Right $ SomeKG ty $ interp (initEnv ++ es) tcom

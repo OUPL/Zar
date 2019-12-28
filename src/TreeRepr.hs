@@ -25,7 +25,7 @@ type Val         = L.Val         InterpM Tree
 prims :: [(String, SomeTypeVal)]
 prims =
   [
-    ("bernoulli", L.SomeTypeVal (TArrow TRational (TDist TBool)) bernoulli_prim)
+    ("flip", L.SomeTypeVal (TArrow TRational (TDist TBool)) bernoulli_prim)
   , ("float_of_int", L.SomeTypeVal (TArrow TInteger TFloat) float_of_int)    
   ]
 

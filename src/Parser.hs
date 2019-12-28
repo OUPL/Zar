@@ -137,6 +137,7 @@ term = do
   choice
     [ nil pos
     , list pos
+    -- , cond pos
     , destruct pos
     , fst_proj pos
     , snd_proj pos

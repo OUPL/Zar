@@ -142,5 +142,8 @@ interp env (While e c) st = interp env (Ite e (Seq c (While e c)) Skip) st
 
 -- Produce a rejection sampler IO action from the given command and
 -- environment.
-sampler :: (Eq a, Show a) => Env -> Com a -> IO a
-sampler env c = untilJust $ interp env c empty
+-- sampler :: (Eq a, Show a) => Env -> Com a -> IO a
+-- sampler env c = untilJust $ interp env c empty
+
+sampler :: (Eq a, Show a) => Env -> Com a -> St -> IO a
+sampler env c st = untilJust $ interp env c st

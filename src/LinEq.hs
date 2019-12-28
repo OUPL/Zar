@@ -5,6 +5,7 @@ import Data.Maybe (catMaybes, maybeToList)
 
 import Sexp
 import Tree
+import Util (debug)
 
 -- Boolean-valued trees with mandatory labels at all split nodes.
 data LTree =
@@ -104,11 +105,18 @@ mult_term r (c, x) = (r*c, x)
 -- anywhere in the RHS. (TODO: combine terms as well? shouldn't be
 -- necessary but could improve efficiency).
 simplify_equation :: Equation -> Equation
-simplify_equation (Equation (x, terms)) =
-  case remove_term (Just x) terms of
-    Nothing -> Equation (x, terms)
-    Just (c, terms') ->
-      simplify_equation $ Equation (x, mult_term (recip (1-c)) <$> terms')
+simplify_equation eq =
+  let Equation (x, terms) = go eq in
+    -- Here we make the choice to set the variable to 0 when it has
+    -- infinitely many solutions.
+    Equation (x, if null terms then [(0, Nothing)] else terms)
+  where
+    go (Equation (x, terms)) =
+      case remove_term (Just x) terms of
+        Nothing -> Equation (x, terms)
+        Just (c, terms') ->
+          simplify_equation $ Equation (x, mult_term (recip (1-c)) <$> terms')
+
 
 -- Use remove_term and recurse until fixed point.
 combine_terms :: [Term] -> [Term]
@@ -131,24 +139,27 @@ solve_equations :: [Equation] -> Equation
 solve_equations = go . sort
   where
     go :: [Equation] -> Equation
-
     -- Can't solve if there are no equations.
     go [] = error "internal error in LinEq:solve_equations"
-    
     go [eq] = simplify_equation eq
-    go (Equation (x, terms) : eqs) =
-      go $ simplify_equation . subst_equation x terms <$> eqs
-    -- go (Equation (x, terms) : eqs) =
-    --   let eqs' = simplify_equation . subst_equation x terms <$> eqs in
-    --     debug ("eqs': " ++ show eqs') $
-    --     go eqs'
+    go (eq : eqs) =
+      let Equation (x, terms) = simplify_equation eq in
+        go $ simplify_equation . subst_equation x terms <$> eqs
 
 -- Add up a list of terms containing no variables. Evaluates to
 -- Nothing if any of the terms contains a variable.
 add_terms :: [Term] -> Maybe Rational
 add_terms [] = Just 0
 add_terms ((c, Nothing) : tms) = add_terms tms >>= return . (c +)
-add_terms ((_, Just _) : _) = Nothing
+-- add_terms ((c, Just x) : [(d, Just y)]) =
+--   if c == d && x == y then Just 0 else Nothing
+-- add_terms ((_, Just _) : _) = Nothing
+add_terms ((c, Just x) : tms) =
+  debug "add_terms failure" $
+  debug ("c: " ++ show c) $
+  debug ("var: " ++ show x) $
+  debug ("tms: " ++ show tms) $
+  Nothing
 
 infer :: Tree Bool -> Maybe Rational
 infer (Leaf True) = Just 1

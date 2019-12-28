@@ -33,13 +33,14 @@ library:
   - monad-loops
   - sparse-linear-algebra
   - z3
-  ghc-options:
+
+ghc-options:
   - -Wunused-imports
-  - -Wname-shadowing
+#  - -Wname-shadowing
   - -Wincomplete-patterns
-  - -Wtype-defaults
+#  - -Wtype-defaults
   - -Wunused-local-binds
-  - -Wunused-matches
+#  - -Wunused-matches
   - -Wunused-top-binds
   - -Werror
 

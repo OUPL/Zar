@@ -26,7 +26,7 @@ type Val         = L.Val         Identity IO
 prims :: [(String, SomeTypeVal)]
 prims =
   [
-    ("bernoulli", L.SomeTypeVal (TArrow TRational $ TDist TBool) bernoulli_prim)
+    ("flip", L.SomeTypeVal (TArrow TRational $ TDist TBool) bernoulli_prim)
     -- Add more here
   ]
 
