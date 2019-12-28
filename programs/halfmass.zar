@@ -1,0 +1,13 @@
+
+main:
+  y <- false
+  b <~ flip(1/2)
+  if b:
+    #x <~ flip(1/2)
+    y <~ flip(1/2)
+    #observe x | y
+  else:
+    z <- false
+    while ~z | z:
+      z <~ flip(1/2)
+  return y
