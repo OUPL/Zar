@@ -8,6 +8,6 @@ main:
   x <- false
   y <- false
   while x = y:
-    x <~ bernoulli(p)
-    y <~ bernoulli(p)
+    x <~ flip(p)
+    y <~ flip(p)
   return x

@@ -1,6 +1,6 @@
 module Util where
 
-import Control.Monad
+-- import Control.Monad
 import Data.Bifunctor
 import Debug.Trace (trace)
 
@@ -57,9 +57,9 @@ bimap' :: (a -> b) -> (a, a) -> (b, b)
 bimap' f = bimap f f
 
 -- We use this with f = Tree, m = InterpM, a = St.
-mapJoin :: (Traversable f, Monad f, Monad m) =>
-                f a -> (a -> m (f b)) -> m (f b)
-mapJoin x g = join <$> (mapM g x)
+-- mapJoin :: (Traversable f, Monad f, Monad m) =>
+--                 f a -> (a -> m (f b)) -> m (f b)
+-- mapJoin x g = join <$> (mapM g x)
 
 isSubsetOf :: Eq a => [a] -> [a] -> Bool
 isSubsetOf xs ys = all (`elem` ys) xs

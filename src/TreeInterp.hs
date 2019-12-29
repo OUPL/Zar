@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
 -- | KY tree semantics. m = InterpM, g = Tree.
@@ -20,7 +21,6 @@ import           Distributions
 import           Lang hiding (Com, Exp, St, Val, interp)
 import qualified Lang (Com, Exp, St, Val)
 import           Tree
-import           Util
 
 
 -- Gensym counter
@@ -49,6 +49,13 @@ instance MonadReader InterpEnv InterpM where
 
 runInterpM :: InterpEnv -> InterpState -> InterpM a -> (a, InterpState)
 runInterpM env s (InterpM f) = runIdentity $ runStateT (runReaderT f env) s
+
+-- Kleisli composition for the monad InterpM ∘ Tree (which I think
+-- forms a monad only because Tree is traversable). Used for composing
+-- the interpretations of commands.
+kcomp :: (a -> InterpM (Tree b)) -> (b -> InterpM (Tree c)) -> a -> InterpM (Tree c)
+kcomp f g x = join <$> (join $ sequenceA <$> (fmap g <$> (f x)))
+
 
 --note(jgs): unused
 -- evalInterpM :: InterpEnv -> InterpState -> InterpM a -> a
@@ -220,23 +227,13 @@ interp' :: (Eq a, Show a) => Com a -> St -> InterpM (Tree a)
 interp' = interp
 
 interp :: (Eq a, Show a) => Com a -> St -> InterpM (Tree a)
+
 interp Skip st = return $ Leaf st
--- interp (Assign x e) t = do
---   mapJoin t $ \st -> do
---     v <- eval e st
---     return $ Leaf $ upd x v st
--- interp (Sample x e) t = do
---   mapJoin t $ \st -> do
---     v <- eval e st
---     case v of
---       VDist t' ->
---         mapM (\e' -> do
---                  v' <- eval e' st
---                  return $ upd x v' st) t'
 
 interp (Assign x e) st = do
   v <- eval e st
   return $ Leaf $ upd x v st
+
 interp (Sample x e) st = do
   v <- eval e st
   case v of
@@ -245,58 +242,12 @@ interp (Sample x e) st = do
                v' <- eval e' st
                return $ upd x v' st) t'
 
--- interp (Seq c1 c2) t = interp' c1 t >>= interp' c2
-interp (Seq c1 c2) st = interp' c1 st >>= \t -> mapJoin t (interp' c2)
-
--- interp (Ite e c1 c2) t =
---   mapJoin t $ \st -> do
---     fresh_lbl1 <- freshLbl
---     fresh_lbl2 <- freshLbl
---     b <- is_true e st
---     if b then
---       set_label fresh_lbl1 <$> (interp' c1 $ Leaf st)
---       else
---       set_label fresh_lbl2 <$> (interp' c2 $ Leaf st)
-
--- interp (Ite e c1 c2) t =
---   mapJoin t $ \st -> do
---     b <- is_true e st
---     if b then interp' c1 $ Leaf st
---       else interp' c2 $ Leaf st
+interp (Seq c1 c2) st = kcomp (interp' c1) (interp' c2) st
 
 interp (Ite e c1 c2) st = do
   b <- is_true e st
   if b then interp' c1 st
     else interp' c2 st
-
--- interp (While e c) t =
---   let deps = var_deps c
---       svars = sample_vars c
---       sdeps = sample_deps svars deps
---       sdeps_in_e = intersect sdeps (id_of_name <$> fvs e) in
---     if not $ null sdeps_in_e then
---       -- Something in e depends on randomness.
---       -- debug "DETECTED RANDOM LOOP" $
---       case dep_cycle deps of
---         Just x ->
---           error $ "loop error: the variable '" ++ show x ++
---           "' depends on itself within the body of a loop"
---         Nothing ->
---           mapJoin t $ \st -> do
---           b <- is_true e st
---           if b then do
---             t' <- interp c $ Leaf st
---             fresh_lbl <- freshLbl
---             t'' <- mapJoin t' $ \st' -> do
---               b' <- is_true e st'
---               return $ if b' then Hole fresh_lbl else Leaf st'
---             return $ set_label fresh_lbl t''
---           else
---             return $ Leaf st
---     else
---       -- Nothing in e depends on randomness so unfold the loop.
---       -- debug "DETECTED UNROLLABLE LOOP" $
---       interp' (Ite e (Seq c (While e c)) Skip) t
 
 interp (While e c) st =
   let deps = var_deps c
@@ -313,12 +264,13 @@ interp (While e c) st =
         Nothing -> do
           b <- is_true e st
           if b then do
-            t' <- interp c st
             fresh_lbl <- freshLbl
-            t'' <- mapJoin t' $ \st' -> do
-              b' <- is_true e st'
-              return $ if b' then Hole fresh_lbl else Leaf st'
-            return $ set_label fresh_lbl t''
+            let kt = interp c
+            let kt' = \st' -> do
+                  b' <- is_true e st'
+                  return $ if b' then Hole fresh_lbl else Leaf st'
+            t' <- kcomp kt kt' st
+            return $ set_label fresh_lbl t'
           else
             return $ Leaf st
     else
@@ -326,14 +278,7 @@ interp (While e c) st =
       -- debug "DETECTED UNROLLABLE LOOP" $
       interp' (Ite e (Seq c (While e c)) Skip) st
 
--- interp (Return e) t = mapM (\st -> EVal <$> eval e st) t
 interp (Return e) st = Leaf . EVal <$> eval e st
-
--- interp (Observe e) t = do
---   root_lbl <- asks snd
---   mapJoin t $ \st -> do
---     b <- is_true e st
---     if b then return $ Leaf st else return $ Hole root_lbl
 
 interp (Observe e) st = do
   root_lbl <- asks snd
@@ -342,11 +287,9 @@ interp (Observe e) st = do
 
 interp Abort t = interp' (Observe $ EVal $ VBool False) t
 
+
 runInterp :: (Eq a, Show a) => Env InterpM Tree -> Com a -> St -> (Tree a, Int)
 runInterp env c st = runInterpM (env, 0) (-1) (interp' c st)
-
--- runInterp' :: (Eq a, Show a) => Env InterpM Tree -> Com a -> Tree a
--- runInterp' env c = set_label 0 $ fst $ runInterp env c (Leaf empty)
 
 runInterp' :: (Eq a, Show a) => Env InterpM Tree -> Com a -> St -> Tree a
 runInterp' env c st = set_label 0 $ fst $ runInterp env c st
