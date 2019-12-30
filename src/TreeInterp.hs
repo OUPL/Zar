@@ -57,6 +57,24 @@ kcomp :: (a -> InterpM (Tree b)) -> (b -> InterpM (Tree c)) -> a -> InterpM (Tre
 kcomp f g x = join <$> (join $ sequenceA <$> (fmap g <$> (f x)))
 
 
+-- Here we can see that f ∘ g is a monad whenever f and g are monads
+-- and g is traversable, so we could change the type of interp to use
+-- Compose InterpM Tree and then automatically derive the kleisli
+-- composition operation, but it's probably easier to use the
+-- specialized kcomp function instead in order to avoid all the
+-- boilerplate.
+newtype Compose f g a = Compose { unCompose :: f (g a) }
+instance (Functor f, Functor g) => Functor (Compose f g) where
+  fmap f (Compose x) = Compose $ fmap f <$> x
+instance (Applicative f, Applicative g) => Applicative (Compose f g) where
+  pure = Compose . pure . pure
+  Compose f <*> Compose x = Compose $ (<*>) <$> f <*> x
+instance (Monad f, Monad g, Traversable g) => Monad (Compose f g) where
+  return = Compose . return . return
+  Compose x >>= k =
+    Compose $ fmap join $ join $ sequenceA <$> fmap (unCompose . k) <$> x
+
+
 --note(jgs): unused
 -- evalInterpM :: InterpEnv -> InterpState -> InterpM a -> a
 -- evalInterpM env s f = fst $ runInterpM env s f
