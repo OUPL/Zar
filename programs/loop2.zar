@@ -1,0 +1,9 @@
+# Program resulting from attempting to desugar loop1.zar to eliminate
+  the loop.
+
+main:
+  x <~ flip(1/2)
+  if x:
+    y <~ flip(1/2)
+    observe y
+  return x

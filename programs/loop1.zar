@@ -1,0 +1,10 @@
+# Program in which the loop can't be desugared to an equivalent one
+  using hard observe. See loop2.zar for the attempted desugaring.
+
+main:
+  x <~ flip(1/2)
+  if x:
+    y <- true
+    while y:
+      y <~ flip(1/2)
+  return x
