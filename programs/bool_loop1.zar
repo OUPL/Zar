@@ -1,0 +1,8 @@
+
+main:
+  x <- false
+  y <- true
+  while y:
+    y <~ flip(1/2)
+    x <- ~ x
+  return x

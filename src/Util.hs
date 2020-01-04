@@ -69,3 +69,9 @@ setEq xs ys = isSubsetOf xs ys && isSubsetOf ys xs
 
 tupleFun :: (a -> b) -> (a -> c) -> a -> (b, c)
 tupleFun f g x = (f x, g x)
+
+modify_at :: Int -> (a -> a) -> [a] -> [a]
+modify_at i f l = let (l1, x:l2) = splitAt i l in l1 ++ f x : l2
+
+set_at :: Int -> a -> [a] -> [a]
+set_at i x = modify_at i $ const x

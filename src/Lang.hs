@@ -24,6 +24,7 @@ module Lang where
 
 import GHC.Exts
 
+import Data.List (union)
 import Data.Proxy
 import Data.Typeable
 
@@ -39,13 +40,19 @@ instance Show (a -> b) where
 type Name a = (String, Proxy a)
 
 data SomeName where
-  SomeName :: forall a. Typeable a => Name a -> SomeName
+  SomeName :: forall a. (Show a, Typeable a) => Name a -> SomeName
 
 instance Eq SomeName where
   SomeName x == SomeName y =
     case cast x of
       Just x' -> x' == y
       Nothing -> False
+
+instance Ord SomeName where
+  compare (SomeName (x, _)) (SomeName (y, _)) = compare x y
+
+instance Show SomeName where
+  show (SomeName (x, _)) = show x
 
 id_of_name :: SomeName -> Id
 id_of_name (SomeName (x, _)) = Id x
@@ -90,6 +97,10 @@ instance (Eq a, Show a, Typeable a) => IsList (Val m g [a]) where
 data SomeVal m g where
   SomeVal :: forall m g a. (Show a, Typeable a) => Val m g a -> SomeVal m g
 deriving instance Show (SomeVal m g)
+
+is_bool_val :: SomeVal m g -> Bool
+is_bool_val (SomeVal (VBool _)) = True
+is_bool_val _ = False
 
 instance Eq (Val m g a) where
   VRational x == VRational y = x == y
@@ -405,13 +416,22 @@ com_list (Seq c1 c2) = (cs ++ [c], c2)
   where (cs, c) = com_list c1
 com_list c = ([], c)
 
+-- Get all names that are assigned within a command.
+assigned_vars :: Com m g a -> [SomeName]
+assigned_vars (Assign x _) = [SomeName x]
+assigned_vars (Sample x _) = [SomeName x]
+assigned_vars (Seq c1 c2) = union (assigned_vars c1) (assigned_vars c2)
+assigned_vars (Ite _ c1 c2) = union (assigned_vars c1) (assigned_vars c2)
+assigned_vars (While _ c) = assigned_vars c
+assigned_vars _ = []
+
 -- | Capture-avoiding substitution.
 
 -- Free variables of an expression.
-fvs :: Typeable a => Exp m g a -> [SomeName]
+fvs :: (Show a, Typeable a) => Exp m g a -> [SomeName]
 fvs = go []
   where
-    go :: Typeable a => [SomeName] -> Exp m g a -> [SomeName]
+    go :: (Show a, Typeable a) => [SomeName] -> Exp m g a -> [SomeName]
     go bound (EVar x) = if SomeName x `elem` bound then [] else [SomeName x]
     go bound (EUnop _ e) = go bound e
     go bound (EBinop _ e1 e2) = go bound e1 ++ go bound e2

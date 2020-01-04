@@ -12,8 +12,9 @@ import Control.Monad.Reader
 import Control.Monad.State hiding (get)
 import qualified Control.Monad.State as S (get)
 
-import Data.Bifunctor (second)
-import Data.List (intersect)
+import Data.Bifunctor (first, second)
+import Data.List (find, intersect, sort)
+import Data.Maybe (fromJust)
 import Data.Typeable
 
 import           Dep
@@ -21,10 +22,16 @@ import           Distributions
 import           Lang hiding (Com, Exp, St, Val, interp)
 import qualified Lang (Com, Exp, St, Val)
 import           Tree
+import           Util (set_at)
 
 
--- Gensym counter
-type InterpState = Int
+-- Gensym counter, tree table (used when compiling loops with
+-- loop-carried boolean variables).
+type InterpState = (Int, [Maybe (Tree St)])
+
+-- The Int here is the "current root label". It is temporarily
+-- modified from the main root when interpreting commands that are
+-- embeddedin expressions.
 type InterpEnv = (Env InterpM Tree, Int)
 
 newtype InterpM a =
@@ -60,7 +67,7 @@ kcomp f g x = join <$> (join $ sequenceA <$> (fmap g <$> (f x)))
 -- Here we can see that f ∘ g is a monad whenever f and g are monads
 -- and g is traversable, so we could change the type of interp to use
 -- Compose InterpM Tree and then automatically derive the kleisli
--- composition operation, but it's probably easier to use the
+-- composition operation (>=>), but it's probably easier to use the
 -- specialized kcomp function instead in order to avoid all the
 -- boilerplate.
 newtype Compose f g a = Compose { unCompose :: f (g a) }
@@ -94,8 +101,8 @@ type Val = Lang.Val InterpM Tree
 
 freshLbl :: InterpM Int
 freshLbl = do
-  counter <- S.get
-  put $ counter + 1
+  counter <- fst <$> S.get
+  modify $ first $ const $ counter + 1
   return $ counter + 1
 
 is_true :: Exp Bool -> St -> InterpM Bool
@@ -245,13 +252,10 @@ interp' :: (Eq a, Show a) => Com a -> St -> InterpM (Tree a)
 interp' = interp
 
 interp :: (Eq a, Show a) => Com a -> St -> InterpM (Tree a)
-
 interp Skip st = return $ Leaf st
-
 interp (Assign x e) st = do
   v <- eval e st
   return $ Leaf $ upd x v st
-
 interp (Sample x e) st = do
   v <- eval e st
   case v of
@@ -259,9 +263,7 @@ interp (Sample x e) st = do
       mapM (\e' -> do
                v' <- eval e' st
                return $ upd x v' st) t'
-
 interp (Seq c1 c2) st = kcomp (interp' c1) (interp' c2) st
-
 interp (Ite e c1 c2) st = do
   b <- is_true e st
   if b then interp' c1 st
@@ -275,39 +277,109 @@ interp (While e c) st =
     if not $ null sdeps_in_e then
       -- Something in e depends on randomness.
       -- debug "DETECTED RANDOM LOOP" $
-      case dep_cycle deps of
-        Just x ->
-          error $ "loop error: the variable '" ++ show x ++
-          "' depends on itself within the body of a loop"
-        Nothing -> do
-          b <- is_true e st
-          if b then do
-            fresh_lbl <- freshLbl
-            let kt = interp c
-            let kt' = \st' -> do
-                  b' <- is_true e st'
-                  return $ if b' then Hole fresh_lbl else Leaf st'
-            t' <- kcomp kt kt' st
-            return $ set_label fresh_lbl t'
+      let lvars = loop_vars deps
+          names = assigned_vars c
+          lnames = filter_names lvars names
+          lvals = map (\(SomeName nm) -> SomeVal $ fromJust $ get nm st) lnames
+          all_bool = all is_bool_val lvals
+      in
+        if not all_bool then
+          error $ "loop error: non-boolean variable " ++
+          show (find (\(SomeName nm) ->
+                        not . is_bool_val $
+                        SomeVal $ fromJust $ get nm st) lnames) ++
+          " with loop-carried dependence"
+        else
+          -- No loop-carried variables so straightforward loop construction.
+          if null lvars then do
+            b <- is_true e st
+            if b then do
+              fresh_lbl <- freshLbl
+              let kt = interp c
+              let kt' = \st' -> do
+                    b' <- is_true e st'
+                    return $ if b' then Hole fresh_lbl else Leaf st'
+              t' <- kcomp kt kt' st
+              return $ set_label fresh_lbl t'
+              else
+              return $ Leaf st
           else
-            return $ Leaf st
+            -- At least one loop-carried boolean variable so invoke
+            -- the truth-table loop construction.
+            -- debug "LOOP-CARRIED BOOLEAN" $
+            -- debug ("lvars: " ++ show lvars) $
+            do
+            b <- is_true e st
+            initialize_treetable $ length lnames
+            if b then mkLoop c e st lnames else return $ Leaf st
     else
       -- Nothing in e depends on randomness so unfold the loop.
       -- debug "DETECTED UNROLLABLE LOOP" $
+      -- debug ("deps: " ++ show deps) $
+      -- debug ("svars: " ++ show svars) $
+      -- debug ("sdeps: " ++ show sdeps) $
+      -- debug ("sdeps_in_e: " ++ show sdeps_in_e) $
       interp' (Ite e (Seq c (While e c)) Skip) st
 
 interp (Return e) st = Leaf . EVal <$> eval e st
-
 interp (Observe e) st = do
   root_lbl <- asks snd
   b <- is_true e st
   if b then return $ Leaf st else return $ Hole root_lbl
-
 interp Abort t = interp' (Observe $ EVal $ VBool False) t
 
 
 runInterp :: (Eq a, Show a) => Env InterpM Tree -> Com a -> St -> (Tree a, Int)
-runInterp env c st = runInterpM (env, 0) (-1) (interp' c st)
+runInterp env c st = second fst $ runInterpM (env, 0) (-1, []) (interp' c st)
 
 runInterp' :: (Eq a, Show a) => Env InterpM Tree -> Com a -> St -> Tree a
 runInterp' env c st = set_label 0 $ fst $ runInterp env c st
+
+-- Given the number of loop-carried variables, initialize the tree
+-- table to a list of length 2^n containing all Nothings.
+initialize_treetable :: Int -> InterpM ()
+initialize_treetable n = modify $ second $ const $ replicate (2^n) Nothing
+
+-- Construct the tree for the body of a loop that contains
+-- loop-carried boolean variables. Arguments: loop body, loop
+-- condition expression, program state, loop-carried variables. Make
+-- sure the tree table is initialized beforehand.
+mkLoop :: Com St -> Exp Bool -> St -> [SomeName] -> InterpM (Tree St)
+mkLoop body_com e st names =
+  -- Compute the index into the tree table using the values of the
+  -- loop-carried variables.
+  let vals = map (\(SomeName nm) -> SomeVal $ fromJust $ get nm st) $ sort names
+      i = int_of_bool_vals vals in
+    -- debug "IN MKLOOP" $
+    -- debug ("vals: " ++ show vals) $
+    -- debug ("i: " ++ show i) $
+    do
+    tree_table <- gets snd
+    fresh_lbl <- freshLbl
+    case tree_table !! i of
+      -- If the tree at index i has already been constructed, return
+      -- it (this will be a hole pointing to the original).
+      Just t -> return t
+      -- Otherwise we must build the tree and update the tree table.
+      Nothing -> do
+        -- Pre-emptively update the tree table with a hole pointing to
+        -- the tree that is currently being constructed so we don't
+        -- diverge.
+        modify $ second $ set_at i $ Just (Hole fresh_lbl)
+        let kt = interp' body_com
+        let kt' = \st' -> do
+              b <- is_true e st'
+              if not b then
+                return $ Leaf st'
+                else
+                mkLoop body_com e st' names
+        set_label fresh_lbl <$> kcomp kt kt' st
+
+-- Treat a list of boolean Vals as the binary encoding of an integer.
+int_of_bool_vals :: [SomeVal m g] -> Int
+int_of_bool_vals = go 0
+  where
+    go :: Int -> [SomeVal m g] -> Int
+    go n (SomeVal (VBool b) : vals) = (if b then 1 else 0) * 2^n + go (n+1) vals
+    go _ [] = 0
+    go _ v = error $ "int_of_bool_vals: expected boolean value, got " ++ show v
