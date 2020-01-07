@@ -45,9 +45,40 @@ let n = 10000
 let () =
   let cnt = ref 0 in
   for i = 0 to n do
-    match run pir_itree with
+    match run t with
     | True -> cnt := !cnt + 1
     | False -> ()
   done;
   print_endline @@ string_of_float @@ float_of_int !cnt /. float_of_int n
 
+
+
+(** For Zar7.v *)
+
+let rec string_of_tree = function
+  | Leaf b -> "(Leaf " ^ (match b with True -> "True" | False -> "False") ^ ")"
+  | Split (t1, t2) -> "(Split " ^ string_of_tree t1 ^ " " ^ string_of_tree t2 ^ ")"
+  | Fail -> "Fail"
+
+open Random
+let _ = Random.self_init
+
+let handle_get k = k (Obj.magic (Random.bool ()))
+
+let rec run t =
+  match observe t with
+  | RetF r -> r
+  | TauF t -> run t
+  | VisF (_, k) -> handle_get (fun x -> run (k x))
+
+let n = 10000
+
+let () =
+  print_endline @@ "tree: " ^ string_of_tree t;
+  let cnt = ref 0 in
+  for i = 0 to n do
+    match run it with
+    | True -> cnt := !cnt + 1
+    | False -> ()
+  done;
+  print_endline @@ string_of_float @@ float_of_int !cnt /. float_of_int n
