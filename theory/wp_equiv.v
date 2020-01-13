@@ -82,9 +82,37 @@ Fixpoint wp (c : com) (f : St -> Q) (st : St) : Q :=
   | CSkip => f st
   | CSeq c1 c2 => wp c1 (wp c2 f) st
   | CAssign x e => f (upd x (e st) st)
-  | CIte e c1 c2 => wp (if (e st) then c1 else c2) f st
+  | CIte e c1 c2 => if e st then wp c1 f st else wp c2 f st
   | CChoice p c1 c2 => p * wp c1 f st + (1-p) * wp c2 f st
   end.
+
+Inductive wp_ : com -> (St -> Q) -> (St -> Q) -> Prop :=
+| wp_skip : forall f, wp_ CSkip f f
+| wp_seq : forall c1 c2 f f' f'',
+    wp_ c2 f f' ->
+    wp_ c1 f' f'' ->
+    wp_ (CSeq c1 c2) f f''
+| wp_assign : forall x e f,
+    wp_ (CAssign x e) f (fun st => f (upd x (e st) st))
+| wp_ite : forall e c1 c2 f g h,
+    wp_ c1 f g ->
+    wp_ c2 f h ->
+    wp_ (CIte e c1 c2) f (fun st => if e st then g st else h st)
+| wp_choice : forall p c1 c2 f g h,
+    wp_ c1 f g ->
+    wp_ c2 f h ->
+    wp_ (CChoice p c1 c2) f (fun st => p * g st + (1-p) * h st).
+
+(** The functional and relational versions of wp agree. *)
+Lemma wp_spec (c : com) (f : St -> Q) :
+  wp_ c f (wp c f).
+Proof.
+  revert f.
+  induction c; try solve [intros; simpl; constructor; auto]; intro f.
+  - econstructor.
+    + apply IHc2.
+    + apply IHc1.
+Qed.    
 
 Theorem equiv (c : com) (f : St -> Q) (s : St) :
   wp c f s = infer f (interp c s).
