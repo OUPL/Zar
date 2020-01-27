@@ -82,7 +82,7 @@ eval env (EUniform l) st =
   case eval env l st of
     VNil -> error "eval: empty list argument to uniform distribution"
     l' ->
-      VDist $ do
+      VDist [] $ do
       g <- newStdGen
       let n = (fst $ random g) :: Int
       return $ EVal $ vlist_nth (n `mod` vlist_length l') l'
@@ -96,7 +96,7 @@ eval env (EApp f x) st =
 
 eval env (ECom args c) st =
   let st' = map (\(SomeNameExp x e) -> SomeNameVal x $ eval env e st) args in
-    VDist $ untilJust $ interp env c st'
+    VDist [] $ untilJust $ interp env c st'
 
 eval env (ECond b e1 e2) st =
   case eval env b st of
@@ -126,7 +126,7 @@ interp env (Ite e c1 c2) st =
 
 interp env (Sample x e) st =
   case eval env e st of
-    VDist f -> f >>= \y -> interp env (Assign x y) st
+    VDist _ f -> f >>= \y -> interp env (Assign x y) st
 
 interp env (Observe e) st =
   case eval env e st of

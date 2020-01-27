@@ -1,65 +1,74 @@
 {-# LANGUAGE GADTs #-}
 
--- | Variable dependency analysis.
+-- | Loop data-flow analysis.
 
-module Dep (dep_cycle, sample_deps, sample_vars, var_deps, loop_vars, filter_names) where
+module Dep (compute_deps, dependent_vars, filter_names, sample_vars,
+            self_dependent_vars) where
 
-import Data.List (intersect, nub, union)
-import Data.Maybe (fromJust, fromMaybe)
+import Data.List (union)
+import Data.Maybe (fromMaybe)
 
-import Lang
-import Symtab (Id(..))
+import Lang hiding (empty, get)
+import Symtab (add, empty, fold, get, Id(..), Symtab)
+import qualified Symtab as S (mapi)
 
--- Compute dependencies of variables in a command (possibly a sequence
--- of commands).
-var_deps :: Com m g a -> [(Id, [Id])]
-var_deps = iter_deps . init_deps
-
-upd_deps :: Eq a => a -> ([b] -> [b]) -> [(a, [b])] -> [(a, [b])]
-upd_deps x f ((x', y) : entries) =
-  if x == x' then
-    (x, f y) : entries
-  else
-    (x', y) : upd_deps x f entries
-upd_deps x f [] = [(x, f [])]
-
--- Merge two sets of dependencies.
-union_deps :: [(Id, [Id])] -> [(Id, [Id])] -> [(Id, [Id])]
-union_deps deps [] = deps
-union_deps deps ((x, ys) : deps') =
-  union_deps (upd_deps x (union ys) deps) deps'
-
--- Initialize with direct dependencies.
-init_deps :: Com m g a -> [(Id, [Id])]
-init_deps (Assign (x, _) e) = [(Id x, id_of_name <$> fvs e)]
-init_deps (Sample (x, _) e) = [(Id x, id_of_name <$> fvs e)]
-init_deps (Seq c1 c2) = union_deps (init_deps c1) (init_deps c2)
-init_deps (Ite e c1 c2) =
-  union_deps (union_deps (init_deps c1) (init_deps c2)) $
-  map (\x -> (id_of_name x, id_of_name <$> fvs e)) $
-  assigned_vars c1 `union` assigned_vars c2
-init_deps (While e c) =
-  union_deps (init_deps c) $
-  map (\x -> (id_of_name x, id_of_name <$> fvs e)) $ assigned_vars c
-init_deps Skip = []
-init_deps (Observe _) = []
-init_deps (Return _) = []
-init_deps Abort = []
-
--- Compute transitive closure (iterate until fixed point).
-iter_deps :: [(Id, [Id])] -> [(Id, [Id])]
-iter_deps deps =
-  if deps == deps' then deps else iter_deps deps'
+compute_deps :: Show a => Com m g a -> Symtab [Id]
+compute_deps = go empty
   where
-    deps' = f deps (fst <$> deps)
-    f :: [(Id, [Id])] -> [Id] -> [(Id, [Id])]
-    f deps0 (x:xs) =
-      let ys = fromJust $ lookup x deps0
-          ys_deps = nub $ concat $ fromMaybe [] . flip lookup deps0 <$> ys
-      in
-        f (upd_deps x (union ys_deps) deps0) xs
-    f deps0 [] = deps0
+    go :: Show a => Symtab [Id] -> Com m g a -> Symtab [Id]
+    go deps Skip = deps
+    go deps (Assign (x, _) e) = f deps (Id x) $ id_of_name <$> fvs e
+    go deps (Sample (x, _) e) = f deps (Id x) $ id_of_name <$> fvs e
+    go deps (Seq c1 c2) = go (go deps c1) c2
+    go deps (Ite e c1 c2) =
+      -- pass deps, free variables of e, union of deps of c1 and c2
+      let c1_deps = go deps c1
+          c2_deps = go deps c2
+          avars = id_of_name <$> union (assigned_vars c1) (assigned_vars c2)
+          deps' = g deps (id_of_name <$> fvs e) avars (union_deps c1_deps c2_deps)
+      in deps'
+    go deps (While e c) =
+      g deps (id_of_name <$> fvs e) (id_of_name <$> assigned_vars c) (go deps c)    
+    go _ _ = empty
 
+    -- initial deps, variable being assigned to, free variables of RHS
+    f :: Symtab [Id] -> Id -> [Id] -> Symtab [Id]
+    f deps x ys =
+      -- If there are no variables in the RHS expression, then moving
+      -- forward in the analysis variable x has no deps.
+      if null ys then
+        add x [] deps
+      else
+        add x (foldl (\acc y -> union acc $ case get y deps of
+                                              Just zs -> zs
+                                              Nothing -> [y])
+                [] ys) deps
+
+    -- initial deps table, free variables of guard expression,
+    -- variables assigned to in cases / loop body, new deps table from
+    -- analyzing cases / loop body -> propagate deps of free variables
+    -- to new deps table
+    g :: Symtab [Id] -> [Id] -> [Id] -> Symtab [Id] -> Symtab [Id]
+    g deps xs ys deps' =
+      let xs_deps = foldl union
+                    (concat $ (\x -> fromMaybe [x] $ get x deps) <$> xs) []
+      in
+        S.mapi (\y zs -> if y `elem` ys then union zs (union xs xs_deps) else zs) deps'
+
+union_deps :: Symtab [Id] -> Symtab [Id] -> Symtab [Id]
+union_deps deps1 deps2 =
+  fold (\acc x x_deps ->
+          add x (union x_deps $ fromMaybe [] $ get x acc) acc) deps2 deps1
+
+-- Given a deps table and a list of variables, find all variables that
+-- depend on at least one variable from the list.
+dependent_vars :: Symtab [Id] -> [Id] -> [Id]
+dependent_vars deps xs =
+  fold (\acc y zs -> if any (`elem` xs) zs then y:acc else acc) [] deps
+
+self_dependent_vars :: Symtab [Id] -> [Id]
+self_dependent_vars =
+  fold (\acc x ys -> if x `elem` ys then x:acc else acc) []
 
 -- Collect variables that are directly assigned random values.
 sample_vars :: Com m g a -> [Id]
@@ -71,37 +80,3 @@ sample_vars _ = []
 
 filter_names :: [Id] -> [SomeName] -> [SomeName]
 filter_names xs = filter (\(SomeName (x, _)) -> Id x `elem` xs)
-
--- is_bool :: SomeName -> Bool
--- is_bool (SomeName nm@(x, _)) =
---   case cast nm of
---     Just nm' -> nm' == (x, Proxy :: Proxy Bool)
---     Nothing -> False
-
--- -- Get type information of variables appearing in a command 
--- get_var_types :: [Id] -> Com m g a -> [SomeName]
--- get_var_types xs (Assign (x, proxy) _) = if Id x `elem` xs then [SomeName (x, proxy)] else []
--- get_var_types xs (Sample (x, proxy) _) = if Id x `elem` xs then [SomeName (x, proxy)] else []
--- get_var_types _ _ = []
-
--- Given variables that are directly assigned random values together
--- with the set of dependencies, compute the set of variables that
--- transitively depend on randomness.
-sample_deps :: [Id] -> [(Id, [Id])] -> [Id]
-sample_deps xs ((x, ys) : deps) =
-  if x `elem` xs || not (null $ intersect xs ys) then
-    x : sample_deps xs deps
-  else
-    sample_deps xs deps
-sample_deps _ [] = []
-
--- Find the first variable in the input list that appears in its own
--- dependency list (it depends on itself).
-dep_cycle :: [(Id, [Id])] -> Maybe Id
-dep_cycle ((x, ys) : deps) = if x `elem` ys then Just x else dep_cycle deps
-dep_cycle [] = Nothing
-
--- Find all variables that are self-dependent.
-loop_vars :: [(Id, [Id])] -> [Id]
-loop_vars ((x, ys) : deps) = (if x `elem` ys then [x] else []) ++ loop_vars deps
-loop_vars [] = []

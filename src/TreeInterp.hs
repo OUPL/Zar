@@ -5,7 +5,7 @@
 
 -- | KY tree semantics. m = InterpM, g = Tree.
 
-module TreeInterp (freshLbl, InterpM, runInterp, runInterp') where
+module TreeInterp (freshLbl, generalize_tree, InterpM, runInterp, runInterp') where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -13,7 +13,7 @@ import Control.Monad.State hiding (get)
 import qualified Control.Monad.State as S (get)
 
 import Data.Bifunctor (first, second)
-import Data.List (find, intersect, sort)
+import Data.List (intersect, sort, union)
 import Data.Maybe (fromJust)
 import Data.Typeable
 
@@ -21,7 +21,7 @@ import           Dep
 import           Distributions
 import           Lang hiding (Com, Exp, St, Val, interp)
 import qualified Lang (Com, Exp, St, Val)
-import           Tree
+import           Tree (labels_of_tree, set_label, subst_label, Tree(..))
 import           Util (set_at)
 
 
@@ -29,10 +29,7 @@ import           Util (set_at)
 -- loop-carried boolean variables).
 type InterpState = (Int, [Maybe (Tree St)])
 
--- The Int here is the "current root label". It is temporarily
--- modified from the main root when interpreting commands that are
--- embeddedin expressions.
-type InterpEnv = (Env InterpM Tree, Int)
+type InterpEnv = Env InterpM Tree
 
 newtype InterpM a =
   InterpM { unInterpM :: ReaderT InterpEnv (State InterpState) a }
@@ -111,6 +108,8 @@ is_true e st = do
   case b of
     VBool b' -> return b'
 
+generalize_tree :: (Eq a, Show a) => Tree (Exp a) -> Val (Tree a)
+generalize_tree t = VDist (labels_of_tree t) t
 
 eval :: Typeable a => Exp a -> St -> InterpM (Val a)
 eval (EVal v) _ = return v
@@ -120,7 +119,7 @@ eval (EVar x) st =
     Just v -> return v
     Nothing -> do
       -- If that fails, try the global environment.
-      env <- asks fst
+      env <- ask
       case envGet x env of
         Just e -> eval e st
         Nothing ->
@@ -218,13 +217,15 @@ eval (EApp f e) st = do
 
 eval (ECom args com) st = do
   st' <- mapM (\(SomeNameExp x e) -> SomeNameVal x <$> eval e st) args
-  lbl <- freshLbl
-  local (second $ const lbl) $
-    VDist . set_label lbl <$> interp com st'
+  -- Remember gensym counter
+  i <- gets fst
+  modify $ first $ const 0
+  t <- generalize_tree <$> interp com st'
+  -- Restore gensym counter
+  modify $ first $ const i
+  return t
 
--- Do we need to introduce labels here? I think it's OK if we don't
--- because nothing bad will happen but in principle they should be
--- there.
+-- Need labels here?
 eval (ECond b e1 e2) st = do
   b' <- is_true b st
   if b' then eval e1 st else eval e2 st
@@ -237,10 +238,9 @@ eval (EUniform e) st = do
     VNil -> error "eval: empty list argument to uniform distribution"
     --note(jgs): Don't generate fresh labels in special case of singleton
     --lists. This is to address issue #8.
-    VCons v1 VNil -> return $ VDist $ Leaf (EVal v1)
+    VCons v1 VNil -> return $ VDist [] $ Leaf (EVal v1)
     _ -> do
-      lbl <- freshLbl
-      return $ VDist $ uniform lbl $ EVal <$> vlist_list v
+      return $ generalize_tree $ uniform $ EVal <$> vlist_list v
 
 
 -- | Interp. Commands are interpreted as functions from trees of
@@ -259,10 +259,13 @@ interp (Assign x e) st = do
 interp (Sample x e) st = do
   v <- eval e st
   case v of
-    VDist t' ->
+    VDist lbls t' -> do
+      t'' <- foldM (\acc lbl -> do
+                       fresh_lbl <- freshLbl
+                       return $ subst_label fresh_lbl lbl acc) t' lbls
       mapM (\e' -> do
                v' <- eval e' st
-               return $ upd x v' st) t'
+               return $ upd x v' st) t''
 interp (Seq c1 c2) st = kcomp (interp' c1) (interp' c2) st
 interp (Ite e c1 c2) st = do
   b <- is_true e st
@@ -270,70 +273,51 @@ interp (Ite e c1 c2) st = do
     else interp' c2 st
 
 interp (While e c) st =
-  let deps = var_deps c
+  let deps = compute_deps c
       svars = sample_vars c
-      sdeps = sample_deps svars deps
-      sdeps_in_e = intersect sdeps (id_of_name <$> fvs e) in
+      sdeps = dependent_vars deps svars
+      sdeps_in_e = intersect (union svars sdeps) (id_of_name <$> fvs e)
+  in
     if not $ null sdeps_in_e then
       -- Something in e depends on randomness.
       -- debug "DETECTED RANDOM LOOP" $
-      let lvars = loop_vars deps
+      let self_dep_vars = self_dependent_vars deps
           names = assigned_vars c
-          lnames = filter_names lvars names
+          lnames = filter_names self_dep_vars names
           lvals = map (\(SomeName nm) -> SomeVal $ fromJust $ get nm st) lnames
           all_bool = all is_bool_val lvals
-      in
-        if not all_bool then
-          error $ "loop error: non-boolean variable " ++
-          show (find (\(SomeName nm) ->
-                        not . is_bool_val $
-                        SomeVal $ fromJust $ get nm st) lnames) ++
-          " with loop-carried dependence"
-        else
-          -- No loop-carried variables so straightforward loop construction.
-          if null lvars then do
-            b <- is_true e st
-            if b then do
-              fresh_lbl <- freshLbl
-              let kt = interp c
-              let kt' = \st' -> do
-                    b' <- is_true e st'
-                    return $ if b' then Hole fresh_lbl else Leaf st'
-              t' <- kcomp kt kt' st
-              return $ set_label fresh_lbl t'
-              else
-              return $ Leaf st
+      in do
+        -- No loop-carried variables so straightforward loop construction.
+        -- debug ("simple loop") $ do
+        b <- is_true e st
+        if b then do
+          fresh_lbl <- freshLbl
+          let kt = interp c
+          let kt' = \st' -> do
+                b' <- is_true e st'
+                return $ if b' then Hole fresh_lbl else Leaf st'
+          t' <- kcomp kt kt' st
+          return $ set_label fresh_lbl t'
           else
-            -- At least one loop-carried boolean variable so invoke
-            -- the truth-table loop construction.
-            -- debug "LOOP-CARRIED BOOLEAN" $
-            -- debug ("lvars: " ++ show lvars) $
-            do
-            b <- is_true e st
-            initialize_treetable $ length lnames
-            if b then mkLoop c e st lnames else return $ Leaf st
+          return $ Leaf st
     else
       -- Nothing in e depends on randomness so unfold the loop.
       -- debug "DETECTED UNROLLABLE LOOP" $
-      -- debug ("deps: " ++ show deps) $
-      -- debug ("svars: " ++ show svars) $
-      -- debug ("sdeps: " ++ show sdeps) $
-      -- debug ("sdeps_in_e: " ++ show sdeps_in_e) $
       interp' (Ite e (Seq c (While e c)) Skip) st
 
 interp (Return e) st = Leaf . EVal <$> eval e st
 interp (Observe e) st = do
-  root_lbl <- asks snd
   b <- is_true e st
-  if b then return $ Leaf st else return $ Hole root_lbl
+  if b then return $ Leaf st else return $ Hole 0
 interp Abort t = interp' (Observe $ EVal $ VBool False) t
 
 
 runInterp :: (Eq a, Show a) => Env InterpM Tree -> Com a -> St -> (Tree a, Int)
-runInterp env c st = second fst $ runInterpM (env, 0) (-1, []) (interp' c st)
+runInterp env c st = second fst $ runInterpM env (0, []) (interp' c st)
 
 runInterp' :: (Eq a, Show a) => Env InterpM Tree -> Com a -> St -> Tree a
 runInterp' env c st = set_label 0 $ fst $ runInterp env c st
+
 
 -- Given the number of loop-carried variables, initialize the tree
 -- table to a list of length 2^n containing all Nothings.
@@ -349,11 +333,8 @@ mkLoop body_com e st names =
   -- Compute the index into the tree table using the values of the
   -- loop-carried variables.
   let vals = map (\(SomeName nm) -> SomeVal $ fromJust $ get nm st) $ sort names
-      i = int_of_bool_vals vals in
-    -- debug "IN MKLOOP" $
-    -- debug ("vals: " ++ show vals) $
-    -- debug ("i: " ++ show i) $
-    do
+      i = int_of_bool_vals vals
+  in do
     tree_table <- gets snd
     fresh_lbl <- freshLbl
     case tree_table !! i of

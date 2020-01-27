@@ -1,0 +1,55 @@
+
+main:
+  # Cowboy A's accuracy.
+  a <- 2/3
+  # Cowboy B's accuracy.
+  b <- 2/3
+
+  # true is cowboy A, false is cowboy B
+  t <~ flip(1/2)
+
+  # x <- false
+  c <- true
+  while c:
+    if t:
+      # Cowboy A's turn.
+      x <~ flip(a)
+      # If his shot hits, he wins.
+      if x:
+        c <- false
+      # Else it becomes cowboy B's turn.
+      else:
+        t <- ~ t
+    else:
+      # Cowboy B's turn.
+      x <~ flip(b)
+      # If his shot hits, he wins.
+      if x:
+        c <- false
+      # Else it becomes cowboy A's turn.
+      else:
+        t <- ~ t
+
+  # Return the survivor
+  return t
+
+
+# main:
+#   a <- 1/2
+#   b <- 1/2
+#   t <~ flip(1/2)
+#   c <- true
+#   while c:
+#     if t:
+#       x <~ flip(a)
+#       if x:
+#         c <- false
+#       else:
+#         t <- ~ t
+#     else:
+#       x <~ flip(b)
+#       if x:
+#         c <- false
+#       else:
+#         t <- ~ t
+#   return t

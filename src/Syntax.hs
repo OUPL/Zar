@@ -113,7 +113,7 @@ fromInteger :: FromInteger a => Integer -> a
 fromInteger = fromI
 
 dist :: (Eq a, Show a) => Tree (Exp a) -> Val (Tree a)
-dist = VDist
+dist = generalize_tree
 
 lam :: (Show a, Typeable a, Eq b, Show b) => Name a -> Exp b -> Val (a -> b)
 lam = VLam

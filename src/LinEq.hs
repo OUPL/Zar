@@ -1,7 +1,7 @@
 module LinEq where
 
 import Data.List (sort)
-import Data.Maybe (catMaybes, maybeToList)
+import Data.Maybe (maybeToList)
 
 import Sexp
 import Tree
@@ -9,7 +9,7 @@ import Util (debug)
 
 -- Boolean-valued trees with mandatory labels at all split nodes.
 data LTree =
-  LLeaf Bool
+  LLeaf Double
   | LSplit Int LTree LTree
   | LHole Int
   deriving (Eq, Show)
@@ -21,7 +21,7 @@ instance ToSexp LTree where
   toSexp (LHole n) = "(Hole " ++ show n ++ ")"
 
 type Var = Int
-type Coeff = Rational
+type Coeff = Double
 type Term = (Coeff, Maybe Var)
 
 -- A linear equation of a specific form. The LHS is a single variable,
@@ -40,12 +40,12 @@ instance Ord Equation where
   compare (Equation (x, _)) (Equation (y, _)) = compare y x
 
 -- Convert a regular tree to an LTree by filling in labels.
-ltree_of_tree :: Tree Bool -> LTree
+ltree_of_tree :: Tree Double -> LTree
 ltree_of_tree t = fst $ go (f 0 t) t
   where
     -- Copy the tree, adding fresh labels at unlabeled split nodes.
-    go :: Int -> Tree Bool -> (LTree, Int)
-    go n (Leaf b) = (LLeaf b, n)
+    go :: Int -> Tree Double -> (LTree, Int)
+    go n (Leaf x) = (LLeaf x, n)
     go n (Split m t1 t2) =
       case m of
         Just m' ->
@@ -58,20 +58,19 @@ ltree_of_tree t = fst $ go (f 0 t) t
             (LSplit (n+1) t1' t2', n'')
     go n (Hole lbl) = (LHole lbl, n)
     -- Find the maximum label occurring in the tree.
-    f :: Int -> Tree Bool -> Int
+    f :: Int -> Tree Double -> Int
     f n (Split m t1 t2) = maximum $ (maybeToList m) ++ [f n t1, f n t2]
     f n _ = n
 
-term_of_ltree :: LTree -> Maybe (Rational, Maybe Int)
-term_of_ltree (LLeaf False)  = Nothing
-term_of_ltree (LLeaf True)   = Just (1/2, Nothing)
-term_of_ltree (LSplit x _ _) = Just (1/2, Just x)
-term_of_ltree (LHole x)      = Just (1/2, Just x)
+term_of_ltree :: LTree -> (Double, Maybe Int)
+term_of_ltree (LLeaf x)      = (x/2, Nothing)
+term_of_ltree (LSplit x _ _) = (1/2, Just x)
+term_of_ltree (LHole x)      = (1/2, Just x)
 
 -- Generate the set of equations from a tree.
 equations_of_ltree :: LTree -> [Equation]
 equations_of_ltree (LSplit x t1 t2) =
-    Equation (x, catMaybes [term_of_ltree t1, term_of_ltree t2]) :
+    Equation (x, [term_of_ltree t1, term_of_ltree t2]) :
   (equations_of_ltree t1) ++ (equations_of_ltree t2)
 equations_of_ltree _ = []
 
@@ -98,7 +97,7 @@ remove_term = go []
     go acc x (tm : terms) = go (tm:acc) x terms
     go _ _ [] = Nothing
 
-mult_term :: Rational -> Term -> Term
+mult_term :: Double -> Term -> Term
 mult_term r (c, x) = (r*c, x)
 
 -- Simplify an equation so that the LHS variable doesn't appear
@@ -148,7 +147,7 @@ solve_equations = go . sort
 
 -- Add up a list of terms containing no variables. Evaluates to
 -- Nothing if any of the terms contains a variable.
-add_terms :: [Term] -> Maybe Rational
+add_terms :: [Term] -> Maybe Double
 add_terms [] = Just 0
 add_terms ((c, Nothing) : tms) = add_terms tms >>= return . (c +)
 -- add_terms ((c, Just x) : [(d, Just y)]) =
@@ -161,9 +160,8 @@ add_terms ((c, Just x) : tms) =
   debug ("tms: " ++ show tms) $
   Nothing
 
-infer :: Tree Bool -> Maybe Rational
-infer (Leaf True) = Just 1
-infer (Leaf False) = Just 0
+infer :: Tree Double -> Maybe Double
+infer (Leaf x) = Just x
 -- If the tree has at least one split node, then the list of generated
 -- equations will be non-empty and safe to pass to the solver.
 infer t = add_terms tms
@@ -184,10 +182,10 @@ infer t = add_terms tms
 --     solution = solve_equations eqs
 --     Equation (_, tms) = solution
 
-infer' :: Tree a -> (a -> Bool) -> Float
-infer' t f =
+infer' :: (a -> Double) ->Tree a -> Double
+infer' f t  =
   case infer (f <$> t) of
-    Just r -> fromRational r
+    Just r -> r
     Nothing -> error "LinEq.hs infer' failure"
 
 

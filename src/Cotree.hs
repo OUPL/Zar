@@ -4,6 +4,7 @@
 module Cotree where
 
 import Datatypes
+import Nat
 import Sexp
 import Tree
 
@@ -60,15 +61,6 @@ cotreeMap f = cata alg
 -- canon_coalg :: (Ord a, Show a) => TreeCoalgebra a -> TreeCoalgebra a
 -- canon_coalg = lift_to_coalg canon
 
-subtree_map :: [Tree a] -> Int -> Tree a
--- Any hole pointing to a nonexistent label are taken to be pointing
--- to themselves (divergent)
-subtree_map [] n = Hole n
--- subtree_map [] n = error $ "subtree_map: index " ++ show n ++ " not found"
-subtree_map (t@(Split (Just n) _ _):ts) m = if n == m then t
-                                            else subtree_map ts m
-subtree_map (_:ts) n = subtree_map ts n
-
 phi :: Tree a -> TreeCoalgebra a
 phi = go . subtree_map . labelled_subtrees
   where
@@ -87,13 +79,13 @@ generate t = case t of
   Leaf x -> Fix $ LeafF x
   Hole _ -> error "generate: tree can't be a single hole"
 
--- prefixAlg :: NatAlgebra (Cotree a -> Tree a)
--- prefixAlg O _ = Hole
--- prefixAlg (S f)(Fix (SplitF t1 t2)) = Split (f t1) (f t2)
--- prefixAlg (S f)(Fix (LeafF x)) = Leaf x
--- prefixAlg _ (Fix NeverF) = Hole
+prefixAlg :: NatAlgebra (Cotree a -> Tree a)
+prefixAlg O _ = Hole 0
+prefixAlg (S f) (Fix (SplitF t1 t2)) = Split Nothing (f t1) (f t2)
+prefixAlg (S f) (Fix (LeafF x)) = Leaf x
+prefixAlg _ (Fix NeverF) = Hole 0
 
--- -- First build up the nat from an int, then collapse it to build the
--- -- prefix function.
--- prefix :: Int -> Cotree a -> Tree a
--- prefix = hylo prefixAlg natOfIntCoalg
+-- First build up the nat from an int, then collapse it to build the
+-- prefix function.
+prefix :: Int -> Cotree a -> Tree a
+prefix = hylo prefixAlg natOfIntCoalg

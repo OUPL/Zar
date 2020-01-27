@@ -8,11 +8,10 @@ import Util
 
 -- Tree that generates the uniform distribution cotree over a given
 -- list (assumed to not contain duplicates).
-uniform :: (Eq a, Show a) => Int -> [a] -> Tree a
-uniform lbl dom =
-  set_label lbl $ canon $ go $
-  -- canon $ go $
-  (Leaf <$> dom) ++ (Hole lbl <$ [0 .. nextPow2 n - n - 1])
+uniform :: (Eq a, Show a) => [a] -> Tree a
+uniform dom =
+  set_label 0 $ canon $ go $
+  (Leaf <$> dom) ++ (Hole 0 <$ [0 .. nextPow2 n - n - 1])
   where
     n = length dom
     go :: [Tree a] -> Tree a
@@ -28,15 +27,15 @@ reduce_rational r = (n `div` c) % (d `div` c)
     d = denominator r
     c = gcd n d
 
-bernoulli :: Int -> Rational -> Tree Bool
-bernoulli lbl r =
-  uniform lbl $ (True <$ [0..n-1]) ++ (False <$ [0..d-n-1])
+bernoulli :: Rational -> Tree Bool
+bernoulli r =
+  uniform $ (True <$ [0..n-1]) ++ (False <$ [0..d-n-1])
   where
     n = numerator $ reduce_rational r
     d = denominator $ reduce_rational r
 
-fair_coin :: Int -> Tree Bool
-fair_coin = flip bernoulli $ 1/2
+fair_coin :: Tree Bool
+fair_coin = bernoulli $ 1/2
 
 
 -- | Experimental

@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving, DeriveAnyClass #-}
 
-module TreeRepr () where
+module TreeRepr (c_infer) where
 
 import           Classes
 import           Distributions
@@ -26,7 +26,7 @@ prims :: [(String, SomeTypeVal)]
 prims =
   [
     ("flip", L.SomeTypeVal (TArrow TRational (TDist TBool)) bernoulli_prim)
-  , ("float_of_int", L.SomeTypeVal (TArrow TInteger TFloat) float_of_int)    
+  , ("float_of_int", L.SomeTypeVal (TArrow TInteger TFloat) float_of_int)
   ]
 
 bernoulli_prim :: Val (Rational -> Tree Bool)
@@ -35,7 +35,7 @@ bernoulli_prim = VPrim f
     f :: Val Rational -> InterpM (Exp (Tree Bool))
     f (VRational r) = do
       lbl <- freshLbl
-      return $ EVal $ VDist $ EVal . VBool <$> bernoulli lbl r
+      return $ EVal $ generalize_tree $ EVal . VBool <$> bernoulli r
 
 float_of_int :: Val (Integer -> Double)
 float_of_int = VPrim f
@@ -57,3 +57,28 @@ instance Infer Tree where
 instance Repr InterpM Tree where
   primitives = prims
   interp     = runInterp' -- In TreeInterp.hs
+
+
+-- Experimental compositional inference
+
+c_infer :: (a -> Double) -> Tree a -> Double
+c_infer f (Leaf x) = f x
+c_infer _ (Hole _) = 0.0
+c_infer f (Split n t1 t2) =
+  case n of
+    Just n' ->
+      ((1/2) * c_infer f t1 + (1/2) * c_infer f t2) /
+      (1 - ((1/2) * c_infer_hole n' t1 + (1/2) * c_infer_hole n' t2))
+    Nothing ->
+      ((1/2) * c_infer f t1 + (1/2) * c_infer f t2)
+
+c_infer_hole :: Int -> Tree a -> Double
+c_infer_hole _ (Leaf _) = 0.0
+c_infer_hole n (Hole m) = if n == m then 1.0 else 0.0
+c_infer_hole n (Split m t1 t2) =
+  case m of
+    Just m' ->
+      ((1/2) * c_infer_hole n t1 + (1/2) * c_infer_hole n t2) /
+      (1 - ((1/2) * c_infer_hole m' t1 + (1/2) * c_infer_hole m' t2))
+    Nothing ->
+      ((1/2) * c_infer_hole n t1 + (1/2) * c_infer_hole n t2)

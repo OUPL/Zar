@@ -6,6 +6,9 @@ func head (l : [int]) -> int :
 func tail (l : [int]) -> [int] :
   destruct(l, []:int, \x:int. \xs:[int]. xs)
 
+func nth (l : [int], n : int) -> int :
+  if n <= 0 then head(l) else nth(tail(l), n-1)
+
 func concat (l1 : [int], l2 : [int]) -> [int] :
   destruct(l1, l2, \x:int. \xs:[int]. x :: concat(xs, l2))
 

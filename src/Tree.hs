@@ -1,4 +1,3 @@
-
 {-# LANGUAGE DeriveFoldable, DeriveFunctor, DeriveTraversable, TupleSections #-}
 {-# LANGUAGE StandaloneDeriving, DeriveAnyClass #-}
 
@@ -6,7 +5,7 @@ module Tree where
 
 import Control.Monad
 import Data.Bifunctor
-import Data.List (nub)
+import Data.List (nub, union)
 import Data.Maybe (fromMaybe)
 
 import Datatypes
@@ -361,15 +360,6 @@ canon t =
     -- debug ("t6: " ++ toSexp t6) $
     if t6 == t then t6 else canon t6
 
--- Unfold holes once.
-expand :: Tree a -> Tree a
-expand t = go t t
-  where
-    go :: Tree a -> Tree a -> Tree a
-    go _ (Leaf x) = Leaf x
-    go t0 (Split n t1 t2) = Split n (go t0 t1) (go t0 t2)
-    go t0 (Hole _) = t0
-
 -- Check if a tree is in canonical form (not necessarily the case that
 -- canon would have no effect).
 is_canon :: Eq a => Tree a -> Bool
@@ -426,7 +416,7 @@ cocanon2 = go 1
 -- Here it may be more convenient to actually define Tree as the least
 -- fixed point of the TreeF functor, so that we can use Fix and unFix.
 
--- Retract? We lose information in unfold but not here.
+-- -- Retract? We lose information in unfold but not here.
 -- fold :: TreeF a (Tree a) -> Tree a
 -- fold (LeafF x) = Leaf x
 -- fold (SplitF t1 t2) = Split Nothing t1 t2
@@ -480,12 +470,12 @@ labelled_subtrees t@(Split n t1 t2) =
   fromMaybe [] ([t] <$ n) ++ labelled_subtrees t1 ++ labelled_subtrees t2
 labelled_subtrees _ = []
 
--- labels_of_tree :: Tree a -> [Int]
--- labels_of_tree t = f <$> labelled_subtrees t
---   where
---     f :: Tree a -> Int
---     f (Split (Just lbl) _ _) = lbl
---     f _ = error "labels_of_tree: no label"
+labels_of_tree :: Tree a -> [Int]
+labels_of_tree t = f <$> labelled_subtrees t
+  where
+    f :: Tree a -> Int
+    f (Split (Just lbl) _ _) = lbl
+    f _ = error "labels_of_tree: no label"
 
 -- remove_orphan_holes :: Eq a => Tree a -> Tree a
 -- remove_orphan_holes t =
@@ -532,3 +522,65 @@ labelled_subtrees _ = []
 tree_size :: Tree a -> Int
 tree_size (Split _ t1 t2) = 1 + tree_size t1 + tree_size t2
 tree_size _ = 1
+
+-- data Tree a =
+--   Leaf a
+--   | Split (Maybe Int) (Tree a) (Tree a)
+--   | Hole Int
+--   deriving (Eq, Foldable, Functor, Ord, Show, Traversable)
+
+mass :: (a -> Double) -> Tree a -> Double
+mass f (Leaf x) = f x
+mass f (Hole _) = 0.0
+mass f (Split _ t1 t2) = mass f t1 / 2.0 + mass f t2 / 2.0
+
+lmass :: (a -> Double) -> Tree a -> Double
+lmass f (Leaf x) = f x
+lmass f (Hole _) = 1.0
+lmass f (Split _ t1 t2) = lmass f t1 / 2.0 + lmass f t2 / 2.0
+
+subtree_map :: [Tree a] -> Int -> Tree a
+-- Any holes pointing to a nonexistent label are taken to be pointing
+-- to themselves (divergent)
+subtree_map [] n = Hole n
+-- subtree_map [] n = error $ "subtree_map: index " ++ show n ++ " not found"
+subtree_map (t@(Split (Just n) _ _):ts) m = if n == m then t
+                                            else subtree_map ts m
+subtree_map (_:ts) n = subtree_map ts n
+
+expand_aux :: (Int -> Tree a) -> Tree a -> Tree a
+expand_aux f (Leaf x) = Leaf x
+expand_aux f (Hole i) = f i
+expand_aux f (Split x t1 t2) = Split x (expand_aux f t1) (expand_aux f t2)
+
+-- Unfold holes once
+expand :: Tree a -> Tree a
+expand t = expand_aux (subtree_map $ labelled_subtrees t) t
+    
+expand_n :: Int -> Tree a -> Tree a
+expand_n n t = foldl (\acc _ -> expand_aux f acc) t [0..n-1]
+  where
+    f = subtree_map $ labelled_subtrees t
+
+-- expand_n :: Int -> Tree a -> [Tree a]
+-- expand_n n t = go n t
+--   where
+--     go m _
+--       | m <= 0 = t
+--     f = subtree_map $ labelled_subtrees t
+
+support :: Eq a => Tree a -> [a]
+support (Leaf x) = [x]
+support (Hole _) = []
+support (Split _ t1 t2) = union (support t1) (support t2)
+
+-- Replace z with y if it's equal to x.
+replace :: Eq a => a -> a -> a -> a
+replace x y z = if x == z then y else z
+
+-- Substitute label x for label y in a tree.
+subst_label :: Int -> Int -> Tree a -> Tree a
+subst_label _ _ (Leaf z) = Leaf z
+subst_label x y (Hole lbl) = Hole $ replace y x lbl
+subst_label x y (Split m t1 t2) =
+  Split (replace y x <$> m) (subst_label x y t1) (subst_label x y t2)

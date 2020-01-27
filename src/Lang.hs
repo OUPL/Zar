@@ -62,7 +62,7 @@ data Val (m :: * -> *) (g :: * -> *) (a :: *) where
   VInteger  :: Integer -> Val m g Integer
   VFloat    :: Double -> Val m g Double
   VBool     :: Bool -> Val m g Bool
-  VDist     :: (Eq a, Show a) => g (Exp m g a) -> Val m g (g a)
+  VDist     :: (Eq a, Show a) => [Int] -> g (Exp m g a) -> Val m g (g a)
   VNil      :: (Eq a, Show a) => Val m g [a]
   VCons     :: (Eq a, Show a, Typeable a) =>
                Val m g a -> Val m g [a] -> Val m g [a]
@@ -107,10 +107,9 @@ instance Eq (Val m g a) where
   VInteger x == VInteger y = x == y
   VFloat x == VFloat y = x == y
   VBool x == VBool y = x == y
-  VDist _ == VDist _ = error "no equality on dists"
-  -- VDist x == VDist y = x == y
-  -- VList x == VList y = x == y
+  VDist _ _ == VDist _ _ = error "no equality on dists"
   VNil == VNil = True
+  VCons x xs == VCons y ys = x == y && xs == ys
   VPair x y == VPair x' y' = x == x' && y == y'
   VLam x e == VLam x' e' =
     if fst x == fst x' then
@@ -121,13 +120,25 @@ instance Eq (Val m g a) where
   VPrim _ == VPrim _ = error "no equality on primitives for now"
   _ == _ = False
 
+instance Ord (Val m g a) where
+  VRational x <= VRational y = x <= y
+  VInteger x <= VInteger y = x <= y
+  VFloat x <= VFloat y = x <= y
+  VBool x <= VBool y = x <= y
+  VDist _ _ <= VDist _ _ = error "no ordering on dists"
+  VNil <= VNil = True
+  VPair x y <= VPair x' y' = x <= x' || x == x' && y <= y'
+  VLam _ _ <= VLam _ _ = error "no ordering on lambdas"
+  VPrim _ <= VPrim _ = error "no ordering on primitives"
+  _ <= _ = False
+
 instance Show a => Show (Val m g a) where
   show (VRational v) = "VRational " ++ show v
   show (VInteger v) = "VInteger " ++ show v
   show (VFloat v) = "VFloat " ++ show v
   show (VBool b) = "VBool " ++ show b
   -- show (VDist t) = "VDist " ++ show t
-  show (VDist _) = "VDist"
+  show (VDist _ _) = "VDist"
   -- show (VList l) = "VList " ++ show l
   show VNil = "VNil"
   show (VCons hd tl) = "VCons " ++ show hd ++ " " ++ show tl
@@ -145,6 +156,9 @@ instance Eq (SomeNameVal m g) where
       Just v1' ->
         x1 == x2 && v1' == v2
       Nothing -> False
+
+instance Ord (SomeNameVal m g) where
+  SomeNameVal (x1, _) _ <= SomeNameVal (x2, _) _ = x1 <= x2
 
 instance Show (SomeNameVal m g) where
   show (SomeNameVal (x, _) v) = "{" ++ show x ++ ", " ++ show v ++ "}"
@@ -325,6 +339,10 @@ instance Eq (Exp m g a) where
   -- Lambda equality up to alpha renaming (substitute x' for x in e)
   ELam x e == ELam x' e' = subst x (EVar x') e == e'
   _ == _ = error "internal error in Lang:Eq (Exp ...)"
+
+instance Ord (Exp m g a) where
+  EVal v1 <= EVal v2 = v1 <= v2
+  e1 <= e2 = e1 == e2
 
 -- instance Show a => Show (Exp m g a) where
 --   show (EVal v) = "(EVal " ++ show v ++ ")"
@@ -534,18 +552,17 @@ vlist_nth n (VCons hd tl)
   | n < 0 = error "vlist_nth: negative index"
   | n == 0 = hd
   | otherwise = vlist_nth (n-1) tl
-vlist_nth _ (VDist _) = error "internal error in Lang:vlist_nth; please report"
+vlist_nth _ (VDist _ _) = error "internal error in Lang:vlist_nth; please report"
 
 vlist_length :: Val m g [a] -> Int
 vlist_length VNil = 0
 vlist_length (VCons _ tl) = 1 + vlist_length tl
-vlist_length (VDist _) = error "internal error in Lang:vlist_length; please report"
+vlist_length (VDist _ _) = error "internal error in Lang:vlist_length; please report"
 
 vlist_list :: Val m g [a] -> [Val m g a]
 vlist_list VNil = []
 vlist_list (VCons x xs) = x : vlist_list xs
-vlist_list (VDist _) = error "internal error in Lang:vlist_list; please report"
-
+vlist_list (VDist _ _) = error "internal error in Lang:vlist_list; please report"
 
 ------------------------------------------------------------------------
 -- | Class of representations as defined by the type constructors 'm'

@@ -35,7 +35,7 @@ bernoulli_prim = VPrim f
   where
     f :: Val Rational -> Identity (Exp (IO Bool))
     f (VRational r) =
-      Identity $ EVal $ VDist $ do
+      Identity $ EVal $ VDist [] $ do
       i <- randomRIO (0.0, 1.0) :: IO Double
       return $ EVal $ VBool $ i < fromRational r
 

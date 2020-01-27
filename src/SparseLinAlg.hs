@@ -16,7 +16,7 @@ import Util (debug)
 -- a linear combination of the variables and the RHS is a single
 -- rational value. E.g., 1x - 1/2y = 1/2.
 type MatTerm = (Coeff, Var)
-type MatEq = ([MatTerm], Rational)
+type MatEq = ([MatTerm], Double)
 
 -- mateq_of_equation :: Equation -> MatEq
 -- mateq_of_equation (Equation (x, tms)) =
@@ -30,18 +30,18 @@ mateq_of_equation (Equation (x, tms)) =
     Just (c, tms') -> ((1, x) : (bimap negate fromJust <$> tms'), c)
     Nothing -> ((1, x) : (bimap negate fromJust <$> tms), 0)
 
-constraint_matrix :: [MatEq] -> SpMatrix Rational
+constraint_matrix :: [MatEq] -> SpMatrix Double
 constraint_matrix eqs =
   let l = concat $ f <$> zip [0..] eqs in
-    debug ("l: " ++ show ((\(x, y, z) -> (x, y, fromRational z :: Double)) <$> l)) $
+    debug ("l: " ++ show ((\(x, y, z) -> (x, y, z)) <$> l)) $
     fromListSM (n, n) l
   where
     n = length eqs
 
-    f :: (Int, MatEq) -> [(Int, Int, Rational)]
+    f :: (Int, MatEq) -> [(Int, Int, Double)]
     f (x, (tms, _)) = g x <$> tms
 
-    g :: Int -> MatTerm -> (Int, Int, Rational)
+    g :: Int -> MatTerm -> (Int, Int, Double)
     g x (c, y) = (x, y, c)
     -- g x (c, y) = (y, x, c)
 
@@ -62,10 +62,10 @@ constraint_matrix eqs =
 --   ltree_of_tree
 
 matrix_of_mateqs :: [MatEq] -> SpMatrix Double
-matrix_of_mateqs = fmap fromRational . constraint_matrix
+matrix_of_mateqs = constraint_matrix
 
 rhs_of_mateqs :: [MatEq] -> SpVector Double
-rhs_of_mateqs eqs = fromListDenseSV n $ fromRational . snd <$> eqs
+rhs_of_mateqs eqs = fromListDenseSV n $ snd <$> eqs
   where n = length eqs
 
 solve_system_gmres :: SpMatrix Double -> SpVector Double -> IO (SpVector Double)
@@ -79,8 +79,8 @@ solve_system_gmres mat rhs =
   -- where
   --   n = nrows mat -- should also be the length of the rhs vector
 
-solve_tree :: Tree Bool -> IO (SpVector Double)
-solve_tree (Leaf b) = return $ fromListDenseSV 1 [if b then 1.0 else 0.0]
+solve_tree :: Tree Double -> IO (SpVector Double)
+solve_tree (Leaf x) = return $ fromListDenseSV 1 [x]
 solve_tree t =
   let lt = ltree_of_tree t
       eqs = sort $ equations_of_ltree lt

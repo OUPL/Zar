@@ -38,7 +38,7 @@ data SomeType m g where
               Type m g a -> SomeType m g
 
 data SomeCom m g where
-  SomeCom :: forall m g a. (Eq a, Show a, Typeable a) =>
+  SomeCom :: forall m g a. (Eq a, Ord a, Show a, Typeable a) =>
              Type m g a -> Com m g a -> SomeCom m g
 deriving instance Show (SomeCom m g)
 
@@ -530,7 +530,7 @@ tycheck prims funcs_dists com =
 --            Type m g a -> g a -> SomeG m g
            
 data SomeKG m g where
-  SomeKG :: forall m g a. (Repr m g, Eq a, Show a, Typeable a) =>
+  SomeKG :: forall m g a. (Repr m g, Eq a, Ord a, Show a, Typeable a) =>
            Type m g a -> (St m g -> g a) -> SomeKG m g
 
 load_repr :: Repr m g =>

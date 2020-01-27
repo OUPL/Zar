@@ -16,7 +16,7 @@ len = EVal $ VPrim f
     f (VCons _ l) =
       let n = EApp len $ Lang.EVal l
       in return $ EBinop BPlus n (EVal $ VInteger $ 1)
-    f (VDist _) = error "len: expected list"
+    f (VDist _ _) = error "len: expected list"
 
 map :: (Show a, Typeable a, Eq b, Show b, Typeable b, Repr m g) =>
        Exp m g ((a -> b, [a]) -> [b])
@@ -28,8 +28,8 @@ map = EVal $ VPrim f
     f (VPair g (VCons x l)) = do
       l' <- f (VPair g l)
       return $ ECons (EApp (EVal g) (EVal x)) l'
-    f (VPair _ (VDist _)) = error "map: expected list"
-    f (VDist _) = error "map: expected list"
+    f (VPair _ (VDist _ _)) = error "map: expected list"
+    f (VDist _ _) = error "map: expected list"
 
 drop :: (Show a, Typeable a, Eq a, Repr m g) =>
        Exp m g ((Integer, [a]) -> [a])
@@ -42,8 +42,8 @@ drop = EVal $ VPrim f
     f (VPair (VInteger n) (VCons x l)) = do
       l' <- f (VPair (VInteger (n - 1)) l)
       return $ ECons (EVal x) l'
-    f (VPair _ (VDist _)) = error "drop: expected list"
-    f (VDist _) = error "drop: expected list"
+    f (VPair _ (VDist _ _)) = error "drop: expected list"
+    f (VDist _ _) = error "drop: expected list"
 
 -- Curried version of map.
 map' :: (Show a, Typeable a, Eq b, Show b, Typeable b, Repr m g) =>
@@ -57,7 +57,7 @@ map' = EVal $ VPrim f
          Exp m g (a -> b) -> Val m g [a] -> m (Exp m g [b])
     h _ VNil = return $ EVal VNil
     h g (VCons x l) = ECons (EApp g $ EVal x) <$> h g l
-    h _ (VDist _) = error "map: expected list"
+    h _ (VDist _ _) = error "map: expected list"
 
 foldleft :: (Show a, Typeable a, Show b, Typeable b, Repr m g) =>
          Exp m g (([a], (b, (b, a) -> b)) -> b)
@@ -101,7 +101,7 @@ foldright = EVal $ VPrim f
           Exp m g b -> Val m g [a] -> Exp m g ((a, b) -> b) -> m (Exp m g b)
     f' acc VNil _ = return acc
     f' acc (VCons x l) g = f' (EApp g (EPair (EVal x) acc)) l g
-    f' _ (VDist _) _ = error "foldright: expected list"
+    f' _ (VDist _ _) _ = error "foldright: expected list"
 
 -- curry' :: Exp m g ((a, b) -> c) -> Exp m g (a -> b -> c)
 -- curry' = undefined
