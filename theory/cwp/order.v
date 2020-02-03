@@ -53,6 +53,14 @@ Definition infimum {A B : Type} `{OType B} (inf : B) (f : A -> B) :=
 Definition supremum {A B : Type} `{OType B} (sup : B) (f : A -> B) :=
   upper_bound sup f /\ forall x, upper_bound x f -> leq sup x.
 
+Lemma infimum_unique {A B : Type} `{o : OType B} (x y : B) (f : A -> B) :
+  infimum x f -> infimum y f -> equ x y.
+Proof.
+  intros [H0 H1] [H2 H3]; split.
+  - apply H3; auto.
+  - apply H1; auto.
+Qed.
+
 Lemma supremum_unique {A B : Type} `{o : OType B} (x y : B) (f : A -> B) :
   supremum x f -> supremum y f -> equ x y.
 Proof.
@@ -103,11 +111,19 @@ Lemma chain_leq {A : Type} `{o : OType A} (f : nat -> A) (n m : nat) :
 Proof. (* use postfix and chain_0_leq *)
 Admitted.
 
-Lemma const_supremum {A : Type} `{o : OType A} (f : nat -> A) (x : A) :
-  (* chain f -> *) (* not quite necessary *)
+Lemma const_infimum {A : Type} {o : OType A} (f : nat -> A) (x : A) :
+  (forall i, equ (f i) x) -> infimum x f.
+Admitted.
+
+Lemma const_supremum {A : Type} {o : OType A} (f : nat -> A) (x : A) :
+  (forall i, equ (f i) x) -> supremum x f.
+Admitted.
+
+Lemma const_supremum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) :
   (exists n0, forall n, (n0 <= n)%nat -> leq (f O) (f n0) /\ equ (f n) x) ->
   supremum x f.
 Admitted.
+
 
 (* x is a fixed point of f *)
 Definition fixed_point {A : Type} (x : A) (f : A -> A) :=
@@ -120,3 +136,35 @@ Definition lfp {A : Type} `{OType A} (x : A) (f : A -> A) :=
 Program Instance OType_Q : OType Q :=
   { leq := Qle }.
 Next Obligation. Admitted.
+
+Lemma Qeq_equ (x y : Q) :
+  x == y <-> equ x y.
+Proof.
+  split; intro H.
+  - split; rewrite H; apply Qle_refl.
+  - apply Qle_antisym; apply H.
+Qed.
+
+Notation "f '==f' g" := (forall x, f x == g x) (at level 80, no associativity) : order_scope.
+Local Open Scope order_scope.
+
+Lemma f_Qeq_equ {A : Type} (f g : A -> Q) :
+  f ==f g <-> equ f g.
+Proof.
+  split; intro H.
+  - split; intro x; specialize (H x);
+      apply Qeq_equ; rewrite H; apply Qeq_refl.
+  - intro x; apply Qeq_equ; split; apply H.
+Qed.
+
+Lemma f_Qeq_refl {A : Type} (f : A -> Q) :
+  f ==f f.
+Proof. intros; apply Qeq_refl. Qed.
+
+Lemma f_Qeq_trans {A : Type} (f g h : A -> Q) :
+  f ==f g -> g ==f h -> f ==f h.
+Proof. intros Hfg Hgh ?; rewrite Hfg; apply Hgh. Qed.
+
+Lemma f_Qeq_symm {A : Type} (f g : A -> Q) :
+  f ==f g -> g ==f f.
+Proof. intros Hfg ?; rewrite Hfg; apply Qeq_refl. Qed.
