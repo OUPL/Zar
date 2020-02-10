@@ -69,6 +69,18 @@ Proof.
   - apply H3; auto.
 Qed.
 
+Lemma equ_supremum {A B : Type} `{o : OType B} (x y : B) (f : A -> B) :
+  equ x y -> supremum x f -> supremum y f.
+Proof.
+  intros [H0 H1] [H2 H3]; split; intro z.
+  - destruct o as [? [? Htrans]].
+    eapply Htrans. apply H2. apply H0.
+  - intro Hupper.
+    apply H3 in Hupper.
+    destruct o as [? [? Htrans]].
+    eapply Htrans; eauto.
+Qed.
+
 Definition monotone {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
   forall x y, leq x y -> leq (f x) (f y).
 
