@@ -1,4 +1,12 @@
 -R . cwp
 
+compile.v
+cpGCL.v
 cwp.v
+geometric.v
+infer.v
+misc.v
 order.v
+Q.v
+tests.v
+tree.v

@@ -1,0 +1,50 @@
+Require Import Coq.Program.Basics.
+Require Import Coq.QArith.QArith.
+
+(** The cpGCL language *)
+
+Definition val := bool.
+Definition St : Type := nat -> val.
+Definition empty : St := fun _ => false.
+Definition upd (x : nat) (v : val) (st : St) : St :=
+  fun y => if Nat.eqb y x then v else st y.
+Definition exp := St -> val.
+
+Inductive cpGCL : Type :=
+| CSkip : cpGCL
+| CAbort : cpGCL
+| CAssign : nat -> exp -> cpGCL
+| CSeq : cpGCL -> cpGCL -> cpGCL
+| CIte : exp -> cpGCL -> cpGCL -> cpGCL
+| CChoice : Q -> cpGCL -> cpGCL -> cpGCL
+| CWhile : exp -> cpGCL -> cpGCL
+| CObserve : exp -> cpGCL.
+
+Record prog :=
+  { prog_com : cpGCL
+  ; prog_query : exp }.
+
+Notation "a ';;' b" := (CSeq a b) (at level 100, right associativity) : cpGCL_scope.
+Open Scope cpGCL_scope.
+
+(* TODO: restrictions on reading/writing to variables within
+   while-loops to ensure correctness of tree inference. *)
+Inductive wf_cpGCL : cpGCL -> Prop :=
+| wf_skip : wf_cpGCL CSkip
+| wf_abort : wf_cpGCL CAbort
+| wf_assign : forall x e, wf_cpGCL (CAssign x e)
+| wf_seq : forall c1 c2,
+    wf_cpGCL c1 -> wf_cpGCL c2 -> wf_cpGCL (CSeq c1 c2)
+| wf_ite : forall e c1 c2,
+    wf_cpGCL c1 -> wf_cpGCL c2 -> wf_cpGCL (CIte e c1 c2)
+| wf_cchoice : forall p c1 c2,
+    0 <= p <= 1 -> wf_cpGCL c1 -> wf_cpGCL c2 -> wf_cpGCL (CChoice p c1 c2)
+| wf_while : forall e body, wf_cpGCL body -> wf_cpGCL (CWhile e body)
+| wf_observe : forall e, wf_cpGCL (CObserve e).
+
+
+(** f is an expectation. *)
+Definition expectation {A : Type} (f : A -> Q) := forall x, 0 <= f x.
+
+(** f is a bounded expectation. *)
+Definition bounded_expectation {A : Type} (f : A -> Q) := forall x, 0 <= f x <= 1.
