@@ -1,3 +1,5 @@
+(** Ordered types and related things (chains, suprema, monotonicity, etc.). *)
+
 Require Import Coq.Program.Basics.
 Require Import List.
 Require Import Coq.Relations.Relation_Definitions.
@@ -59,7 +61,9 @@ Next Obligation. split; auto. Qed.
 
 Program Instance OType_Q : OType Q :=
   { leq := Qle }.
-Next Obligation. Admitted.
+Next Obligation.
+  constructor; unfold Reflexive, Transitive; intros; lra.
+Qed.
 
 Program Instance PType_arrow A B `{p : PType B} : PType (A -> B) :=
   {| bot := const bot |}.
@@ -122,14 +126,29 @@ Proof.
     eapply Htrans; eauto.
 Qed.
 
+Lemma equ_infimum {A B : Type} `{o : OType B} (x y : B) (f : A -> B) :
+  equ x y -> infimum x f -> infimum y f.
+Proof.
+  intros [H0 H1] [H2 H3]; split; intro z.
+  - destruct o as [? [? Htrans]].
+    eapply Htrans. apply H1. apply H2.
+  - intro Hlower.
+    apply H3 in Hlower.
+    destruct o as [? [? Htrans]].
+    eapply Htrans; eauto.
+Qed.
+
 Definition monotone {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
   forall x y, leq x y -> leq (f x) (f y).
+
+Definition monotone_decreasing {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
+  forall x y, leq x y -> leq (f y) (f x).
 
 Lemma monotone_chain {A B : Type} `{OType A} `{OType B} (f : A -> B) (g : nat -> A) :
   monotone f ->
   chain g ->
   chain (f ∘ g).
-Admitted.
+Proof. intros Hmono Hg i; apply Hmono, Hg. Qed.
 
 Definition ratio_chain (f g : nat -> Q) := fun i => f i / g i.
 
@@ -161,21 +180,40 @@ Lemma chain_leq {A : Type} `{o : OType A} (f : nat -> A) (n m : nat) :
   chain f ->
   (n <= m)%nat ->
   leq (f n) (f m).
-Proof. (* use postfix and chain_0_leq *)
-Admitted.
+Proof.
+  intros Hchain Hle; induction m.
+  - assert (n = O). lia. subst; reflexivity.
+  - destruct (Nat.eqb_spec n (S m)); subst.
+    + reflexivity.
+    + assert (H': (n <= m)%nat). lia.
+      etransitivity. apply IHm; auto.
+      apply Hchain.
+Qed.
 
-Lemma const_infimum {A : Type} {o : OType A} (f : nat -> A) (x : A) :
-  (forall i, equ (f i) x) -> infimum x f.
-Admitted.
+Lemma const_infimum {A : Type} {o : OType A} (ch : nat -> A) (c : A) :
+  (forall i, equ (ch i) c) -> infimum c ch.
+Proof.
+  intros Hequ; split.
+  - intro; apply Hequ.
+  - intros lb Hlb.
+    specialize (Hlb O); specialize (Hequ O).
+    etransitivity; eauto; apply Hequ.
+Qed.
 
 Lemma const_supremum {A : Type} {o : OType A} (f : nat -> A) (x : A) :
   (forall i, equ (f i) x) -> supremum x f.
-Admitted.
+Proof.
+  intros Hequ; split.
+  - intro; apply Hequ.
+  - intros ub Hub.
+    specialize (Hub O); specialize (Hequ O).
+    etransitivity; eauto; apply Hequ.
+Qed.
 
-Lemma const_supremum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) :
-  (exists n0, forall n, (n0 <= n)%nat -> leq (f O) (f n0) /\ equ (f n) x) ->
-  supremum x f.
-Admitted.
+(* Lemma const_supremum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) : *)
+(*   (exists n0, forall n, (n0 <= n)%nat -> leq (f O) (f n0) /\ equ (f n) x) -> *)
+(*   supremum x f. *)
+(* Admitted. *)
 
 (* x is a fixed point of f *)
 Definition fixed_point {A : Type} (x : A) (f : A -> A) :=
@@ -201,7 +239,6 @@ Proof.
       apply Qeq_equ; rewrite H; apply Qeq_refl.
   - intro x; apply Qeq_equ; split; apply H.
 Qed.
-
 
 Definition converges (g : nat -> Q) (lim : Q) :=
   forall eps,
@@ -237,6 +274,35 @@ Proof.
   - lra.
 Qed.
 
+Lemma converges_decreasing_lb (g : nat -> Q) (lim : Q) :
+  (forall i, g (S i) <= g i) ->
+  converges g lim ->
+  lower_bound lim g.
+Proof.
+  unfold converges.
+  intros Hle Hc n; simpl.
+  destruct (Qlt_le_dec (g n) lim); auto.
+  set (eps := lim - g n).
+  assert (0 < eps).
+  { unfold eps; lra. }
+  specialize (Hc eps H); destruct Hc as [n0 Hc].
+  specialize (Hc (max n n0) (Nat.le_max_r _ _)).
+  rewrite Qabs_Qminus in Hc.
+  assert (H0: forall m, (n <= m)%nat -> g m <= g n).
+  { intros m Hle'; induction m.
+    - inversion Hle'; lra.
+    - destruct (Nat.eqb_spec n (S m)); subst.
+      + lra.
+      + assert (n <= m)%nat. lia.
+        apply IHm in H0; eapply Qle_trans; eauto. }
+  assert (H1: g (max n n0) <= g n).
+  { apply H0. apply Nat.le_max_l. }
+  rewrite Qabs_Qminus in Hc.
+  rewrite Qabs_Qminus_Qle in Hc.
+  - unfold eps in Hc; lra.
+  - lra.
+Qed.
+
 Lemma converges_increasing_le_ub (g : nat -> Q) (lim : Q) :
   converges g lim ->
   forall ub, upper_bound ub g -> lim <= ub.
@@ -251,6 +317,20 @@ Proof.
   unfold eps in Hc; rewrite Qabs_Qminus_Qle in Hc; lra.
 Qed.
 
+Lemma converges_decreasing_lb_le (g : nat -> Q) (lim : Q) :
+  converges g lim ->
+  forall lb, lower_bound lb g -> lb <= lim.
+Proof.
+  unfold lower_bound; simpl; unfold converges.
+  intros Hc lb Hlb; destruct (Qlt_le_dec lim lb); auto.
+  set (eps := lb - lim).
+  assert (Heps: 0 < eps).
+  { unfold eps; lra. }
+  specialize (Hc eps Heps); destruct Hc as [n0 Hc].
+  specialize (Hc n0 (le_refl _)); specialize (Hlb n0).
+  unfold eps in Hc; rewrite Qabs_Qminus, Qabs_Qminus_Qle in Hc; lra.
+Qed.
+
 (* If g is monotonically increasing and converges to lim, then lim is
    the supremum of g. *)
 Lemma converges_from_below_supremum (g : nat -> Q) (lim : Q) :
@@ -262,6 +342,19 @@ Proof.
   intros Hc. split.
   - apply converges_increasing_ub; auto.
   - apply converges_increasing_le_ub; auto.
+Qed.
+
+(* If g is monotonically decreasing and converges to lim, then lim is
+   the infimum of g. *)
+Lemma converges_from_above_infimum (g : nat -> Q) (lim : Q) :
+  (forall i, g (S i) <= g i) ->
+  converges g lim ->
+  infimum lim g.
+Proof.
+  unfold converges.
+  intros Hc. split.
+  - apply converges_decreasing_lb; auto.
+  - apply converges_decreasing_lb_le; auto.
 Qed.
 
 Lemma Proper_converges : Proper (f_Qeq ==> Qeq ==> iff) converges.
@@ -281,7 +374,7 @@ Qed.
     generally. Although I guess it doesn't matter. *)
 Lemma Proper_supremum_Q : Proper (Qeq ==> @f_Qeq nat ==> iff) supremum.
 Proof.
-  unfold f_Qeq. intros x y Heq1 f g Heq2. unfold supremum, upper_bound, leq; simpl.
+  unfold f_Qeq. intros x y Heq1 f g Heq2.
   split; intros [Hub Hlub].
   - split.
     + intro z; rewrite <- Heq1, <- Heq2; auto.
@@ -289,6 +382,18 @@ Proof.
   - split.
     + intro z; rewrite Heq1, Heq2; auto.
     + intros z Hle; rewrite Heq1; apply Hlub; intro w; rewrite <- Heq2; auto.
+Qed.
+
+Lemma Proper_infimum_Q : Proper (Qeq ==> @f_Qeq nat ==> iff) infimum.
+Proof.
+  unfold f_Qeq. intros x y Heq1 f g Heq2.
+  split; intros [Hub Hglb].
+  - split.
+    + intro z; rewrite <- Heq1, <- Heq2; auto.
+    + intros z Hle; rewrite <- Heq1; apply Hglb; intro w; rewrite Heq2; auto.
+  - split.
+    + intro z; rewrite Heq1, Heq2; auto.
+    + intros z Hle; rewrite Heq1; apply Hglb; intro w; rewrite <- Heq2; auto.
 Qed.
 
 (** Given a function f and a chain of functions g, f is the supremum
@@ -300,6 +405,15 @@ Proof.
   intro Hsup; split.
   - intros ? ?; apply Hsup.
   - intros ? Hub ?; apply Hsup; intros ?; apply Hub.
+Qed.
+
+Lemma infimum_pointwise {A : Type} (ch : nat -> A -> Q) (f : A -> Q) :
+  (forall x, infimum (f x) (app_chain ch x)) ->
+  infimum f ch.
+Proof.
+  intro Hinf; split.
+  - intros ? ?; apply Hinf.
+  - intros ? Hub ?; apply Hinf; intros ?; apply Hub.
 Qed.
 
 Lemma cons_chain_supremum {A : Type} `{OType A} (x : A) (ch : nat -> A) (sup : A) :

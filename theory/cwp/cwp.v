@@ -1,5 +1,7 @@
-Set Implicit Arguments.
+(** Relational and functional specifications of conditional weakest
+    pre-expectation semantics. *)
 
+Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import List.
 Require Import Nat.
@@ -13,7 +15,6 @@ Require Import cpGCL.
 Require Import geometric.
 Require Import order.
 Require Import Q.
-
 Open Scope cpGCL_scope.
 Open Scope Q_scope.
 
@@ -43,7 +44,7 @@ Inductive wp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
 | wp_while : forall e body f f' ch,
     ch O = const 0 ->
     (forall n, exists g, wp body (ch n) g /\
-               ch (S n) = fun st => if e st : bool then g st else f st) ->
+               ch (S n) ==f fun st => if e st : bool then g st else f st) ->
     supremum f' ch ->
     wp (CWhile e body) f f'
 | wp_observe : forall e f f',
@@ -54,18 +55,21 @@ Inductive wp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
 (** Relational specification of weakest liberal pre-expectation
     semantics *)
 Inductive wlp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
-| wlp_skip : forall f, wlp CSkip f f
-| wlp_abort : forall f, wlp CAbort f (const 1)
-| wlp_assign : forall x e f,
-    wlp (CAssign x e) f (fun st => f (upd x (e st) st))
-| wlp_seq : forall c1 c2 f f' f'',
-    wlp c2 f f' ->
-    wlp c1 f' f'' ->
-    wlp (CSeq c1 c2) f f''
-| wlp_ite : forall e c1 c2 f g h,
+| wlp_skip : forall f g, f ==f g -> wlp CSkip f g
+| wlp_abort : forall f g, g ==f const 1 -> wlp CAbort f g
+| wlp_assign : forall x e f f',
+    f' ==f (fun st => f (upd x (e st) st)) ->
+    wlp (CAssign x e) f f'
+| wlp_seq : forall c1 c2 f f' g g',
+    wlp c2 f g ->
+    wlp c1 g g' ->
+    f' ==f g' ->
+    wlp (CSeq c1 c2) f f'
+| wlp_ite : forall e c1 c2 f f' g h,
     wlp c1 f g ->
     wlp c2 f h ->
-    wlp (CIte e c1 c2) f (fun st => if e st then g st else h st)
+    f' ==f (fun st => if e st : bool then g st else h st) ->
+    wlp (CIte e c1 c2) f f'
 | wlp_choice : forall p c1 c2 f f' g h,
     wlp c1 f g ->
     wlp c2 f h ->
@@ -77,8 +81,9 @@ Inductive wlp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
                ch (S n) ==f fun st => if e st : bool then g st else f st) ->
     infimum f' ch ->
     wlp (CWhile e body) f f'
-| wlp_observe : forall e f,
-    wlp (CObserve e) f (fun st => if e st then f st else 0).
+| wlp_observe : forall e f f',
+    f' ==f (fun st => if e st : bool then f st else 0) ->
+    wlp (CObserve e) f f'.
 
 (** cwp_ is decomposed into wp and wlp *)
 Definition cwp_ (c : cpGCL) (f f' g g' : St -> Q) :=
@@ -91,123 +96,96 @@ Definition cwp (c : cpGCL) (f f'' : St -> Q) :=
 
 (** Functional specification of weakest pre-expectation semantics
     (only valid for iid programs). *)
-Fixpoint wp_iid (c : cpGCL) (f : St -> Q) : (St -> Q) :=
+Fixpoint wpf (c : cpGCL) (f : St -> Q) : St -> Q :=
   match c with
   | CSkip => f
   | CAbort => const 0
   | CAssign x e => fun st => f (upd x (e st) st)
-  | CSeq c1 c2 => (wp_iid c1 ∘ wp_iid c2) f
-  | CIte e c1 c2 => fun st => if e st then wp_iid c1 f st else wp_iid c2 f st
-  | CChoice p c1 c2 => fun st => p * wp_iid c1 f st + (1-p) * wp_iid c2 f st
+  | CSeq c1 c2 => (wpf c1 ∘ wpf c2) f
+  | CIte e c1 c2 => fun st => if e st then wpf c1 f st else wpf c2 f st
+  | CChoice p c1 c2 => fun st => p * wpf c1 f st + (1-p) * wpf c2 f st
   | CWhile e body =>
     fun st =>
-      wp_iid body (fun st' => if e st' then 0 else f st') st /
-             (1 - wp_iid body (fun st' => if e st' then 1 else 0) st)
+      wpf body (fun st' => if e st' then 0 else f st') st /
+             (1 - wpf body (fun st' => if e st' then 1 else 0) st)
   | CObserve e => fun st => if e st then f st else 0
   end.
 
 (** Functional specification of weakest liberal pre-expectation
     semantics (only valid for iid programs). *)
-Fixpoint wlp_iid (c : cpGCL) (f : St -> Q) : (St -> Q) :=
+Fixpoint wlpf (c : cpGCL) (f : St -> Q) : St -> Q :=
   match c with
   | CSkip => f
   | CAbort => const 1
   | CAssign x e => fun st => f (upd x (e st) st)
-  | CSeq c1 c2 => (wlp_iid c1 ∘ wlp_iid c2) f
-  | CIte e c1 c2 => fun st => if e st then wlp_iid c1 f st else wlp_iid c2 f st
-  | CChoice p c1 c2 => fun st => p * wlp_iid c1 f st + (1-p) * wlp_iid c2 f st
+  | CSeq c1 c2 => (wlpf c1 ∘ wlpf c2) f
+  | CIte e c1 c2 => fun st => if e st then wlpf c1 f st else wlpf c2 f st
+  | CChoice p c1 c2 => fun st => p * wlpf c1 f st + (1-p) * wlpf c2 f st
   | CWhile e body =>
     fun st =>
-      wlp_iid body (fun st' => if e st' then 0 else f st') st /
-             (1 - wp_iid body (fun st' => if e st' then 1 else 0) st)
+      let a := wlpf body (fun st' => if e st' then 0 else f st') st in
+      let r := wpf body (fun st' => if e st' then 1 else 0) st in
+      if Qeq_bool r 1 then 1 else a / (1 - r)
   | CObserve e => fun st => if e st then f st else 0
   end.
 
+Definition cwpf_ (c : cpGCL) (f : St  -> Q) : St -> Q*Q :=
+  fun st => (wpf c f st, wlpf c (const 1) st).
+
 (** Functional specification of conditional weakest pre-expectation
     semantics (only valid for iid programs). *)
-Definition cwp_iid (c : cpGCL) (f : St -> Q) : St -> Q :=
-  fun st => wp_iid c f st / wlp_iid c (const 1) st.
+Definition cwpf (c : cpGCL) (f : St  -> Q) : St -> Q :=
+  fun st => let (a, b) := cwpf_ c f st in a / b.
 
-(* Lemma wp_proper (c : cpGCL) (f g g': St -> Q) : *)
-(*   wp c f g -> *)
-(*   g ==f g' -> *)
-(*   wp c f g'. *)
-(* Proof. *)
-(*   induction c; intros H0 H1; inversion H0; subst; clear H0. *)
-(*   - constructor; auto; eapply f_Qeq_trans; eauto. *)
-(*   - constructor; auto; eapply f_Qeq_trans; eauto; apply f_Qeq_symm; auto. *)
-(*   - constructor; intro x; rewrite <- H1, H5; reflexivity. *)
-(*   - eapply wp_seq; eauto; eapply f_Qeq_trans; eauto; apply f_Qeq_symm; auto. *)
-(*   - econstructor; eauto; intro x; rewrite <- H1, H8; reflexivity. *)
-(*   - econstructor; eauto; intro x; rewrite <- H1, H8; reflexivity. *)
-(*   - econstructor; eauto; eapply equ_supremum; eauto; apply f_Qeq_equ; auto. *)
-(*   - constructor; intro x; rewrite <- H1, H2; reflexivity. *)
-(* Qed. *)
+Definition indicator (e : exp) (st : St) : Q :=
+  if e st then 1 else 0.
 
-(* Theorem wp_infer (c : cpGCL) (f : St -> Q) (n : nat) : *)
-(*   wf_cpGCL c -> *)
-(*   expectation f -> *)
-(*   wp c f (infer_f f ∘ evalCompile c n). *)
-(* Proof. *)
-(*   revert f n. induction c; intros f m Hwf Hexp; try solve [constructor; intros ?; reflexivity]. *)
-(*   (* sequence *) *)
-(*   - unfold compose. unfold evalCompile, evalState in *. simpl. *)
-(*     destruct (runState (compile c1) m) eqn:Hc1. *)
-(*     destruct (runState (compile c2) n) eqn:Hc2. *)
-(*     inversion Hwf; subst. *)
+Definition neg_indicator (e : exp) (st : St) : Q :=
+  if e st then 0 else 1.
 
-(*     econstructor. apply IHc2 with (n:=n); auto. *)
-(*     apply IHc1 with (n:=m); auto. intro x. *)
-(*     apply infer_f_expectation_0_le; auto. apply compile_wf; auto. *)
-(*     intro x. unfold compose. simpl. *)
-(*     rewrite Hc1. rewrite Hc2. *)
-(*     unfold kcomp. simpl. rewrite <- infer_f_bind. reflexivity. *)
-(*     intros n1 x0 Hbound. eapply compile_bound_in_not_in. *)
-(*     apply Hc1. apply Hc2. omega. apply Hbound. *)
+Fixpoint unroll (e : exp) (c : cpGCL) (i : nat) : cpGCL :=
+  match i with
+  | O => CAbort
+  | S i' => CIte e (CSeq c (unroll e c i')) CSkip
+  end.
 
-(*   (* ite *) *)
-(*   - unfold compose; simpl. *)
-(*     set (fi := infer_f f). *)
-(*     inversion Hwf; subst. *)
-(*     unfold evalCompile, evalState in *. simpl. *)
-(*     destruct (runState (compile c1) m) eqn:Hc1. *)
-(*     destruct (runState (compile c2) n) eqn:Hc2. simpl. *)
-(*     econstructor. apply IHc1 with (n:=m); auto. *)
-(*     apply IHc2 with (n:=n); auto. *)
-(*     intro x. destruct (e x). *)
-(*     rewrite Hc1; reflexivity. *)
-(*     rewrite Hc2; reflexivity. *)
+Definition iid_wpf (e : exp) (c : cpGCL) :=
+  forall f st n,
+    wpf (unroll e c (S n)) f st =
+    wpf c (indicator e) st * wpf (unroll e c n) f st +
+    wpf c (fun x => if e x then 0 else f x) st.
 
-(*   (* choice *) *)
-(*   - unfold compose, evalCompile, evalState in *; simpl. *)
-(*     inversion Hwf; subst. *)
-(*     specialize (IHc1 f m H3 Hexp). *)
-(*     destruct (runState (compile c1) m) eqn:Hc1. *)
-(*     specialize (IHc2 f n H4 Hexp). *)
-(*     destruct (runState (compile c2) n) eqn:Hc2. simpl in *. *)
-(*     econstructor. *)
-(*     apply IHc1. *)
-(*     apply IHc2. *)
-(*     reflexivity. *)
+Definition iid_wlpf (e : exp) (c : cpGCL) :=
+  forall f st n,
+    wlpf (unroll e c (S n)) f st =
+    wpf c (indicator e) st * wlpf (unroll e c n) f st +
+    wlpf c (fun x => if e x then 0 else f x) st.
 
-(*   (* while *) *)
-(*   - *)
-(*     (* Need to provide a chain of approximations that satisfies the *)
-(*        conditions of the while wp constructor, and such that infer *)
-(*        after compile yields of the supremum of that chain (probably *)
-(*        via an argument based on convergence of geometric series). *) *)
+(** The loop with guard expression e and body c is iid wrt both wpf
+    and wlpf. *)
+Definition iid (e : exp) (c : cpGCL) :=
+  iid_wpf e c /\ iid_wlpf e c.
 
-(*     (* set (ch := *) *)
-    
-(*     simpl. unfold compose. simpl. *)
-(*     (* econstructor. *) *)
-
-(*     admit. *)
-
-(*   (* observe *) *)
-(*   - unfold compose, evalCompile, evalState; simpl. *)
-(*     constructor. intro x. destruct (e x); reflexivity. *)
-(* Admitted. *)
+(** Predicate expressing that all loops in a program are iid. *)
+Inductive iid_cpGCL : cpGCL -> Prop :=
+| iid_skip : iid_cpGCL CSkip
+| iid_abort : iid_cpGCL CAbort
+| iid_assign : forall x e, iid_cpGCL (CAssign x e)
+| iid_seq : forall c1 c2,
+    iid_cpGCL c1 -> iid_cpGCL c2 ->
+    iid_cpGCL (CSeq c1 c2)
+| iid_ite : forall e c1 c2,
+    iid_cpGCL c1 -> iid_cpGCL c2 ->
+    iid_cpGCL (CIte e c1 c2)
+| iid_choice : forall p c1 c2,
+    iid_cpGCL c1 -> iid_cpGCL c2 ->
+    iid_cpGCL (CChoice p c1 c2)
+| iid_while : forall e c,
+    iid_cpGCL c ->
+    iid e c ->
+    iid_cpGCL (CWhile e c)
+| iid_observe : forall e,
+    iid_cpGCL (CObserve e).
 
 
 (** Using CWP on example programs *)
@@ -230,286 +208,181 @@ Ltac wlp_inversion :=
   end;
   repeat rewrite_equiv.
 
-(* Lemma goldfish_piranha_cwp (f : St -> Q) : *)
-(*   cwp goldfish_piranha (fun st => if st O then 1 else 0) f -> f ==f const (2#3). *)
-(* Proof. *)
-(*   intros (f' & g' & [Hwp Hwlp] & Hf) x. *)
-(*   repeat wp_inversion; repeat wlp_inversion; reflexivity. *)
-(* Qed. *)
-
-(* Lemma fair_coin_cwp (f : St -> Q) : *)
-(*   cwp fair_coin (fun st => if st O then 1 else 0) f -> f ==f const (1#2). *)
-(* Proof. *)
-(*   unfold fair_coin. *)
-(*   unfold cwp. *)
-(*   intros (f' & g' & [Hwp Hwlp] & Hf). *)
-(*   set (fx := fun st : St => if st O : bool then 1 else 0). *)
-(*   repeat wp_inversion. *)
-(*   repeat wlp_inversion. *)
-(*   intro x. rewrite Hf. unfold const. *)
-(*   assert (forall i, ch0 i ==f const 1). *)
-(*   { clear Hf H5 H6 H8 H1 H3 H7 H10 H13 f f' f'1 ch x g g'0 g0 g'1. *)
-(*     intro i. induction i. *)
-(*     - intro x; rewrite H2; reflexivity. *)
-(*     - specialize (H9 i). *)
-(*       destruct H9 as (g & Hwlp & H). *)
-(*       repeat wlp_inversion. *)
-(*       unfold const in *. *)
-(*       intro st. *)
-(*       assert (H9' := H9). *)
-(*       specialize (H9 (upd O true st)). *)
-(*       specialize (H9' (upd O false st)). *)
-(*       specialize (H10 st). *)
-(*       rewrite 2!IHi in H9. *)
-(*       rewrite 2!IHi in H9'. *)
-(*       rewrite H9 in H10. *)
-(*       rewrite H9' in H10. *)
-(*       rewrite H. *)
-(*       destruct (eqb (st O) (st (S O))); try reflexivity. *)
-(*       rewrite H10. field. } *)
-(*   assert (infimum (const 1) ch0). *)
-(*   { apply const_infimum; intro i; apply f_Qeq_equ; auto. } *)
-(*   assert (Hf'1: f'1 ==f const 1). *)
-(*   { apply f_Qeq_equ; eapply infimum_unique; eauto. } *)
-(*   rewrite Hf'1. *)
-(*   assert (supremum (fun st => if eqb (st O) (st (S O)) then 1#2 else fx st) ch). *)
-(*   { *)
-(*     split. *)
-(*     - intros i st. unfold const; simpl. *)
-(*       clear Hf. clear H6. clear H2. clear H5. clear H9. *)
-(*       clear x. clear H0. clear Hf'1. clear H. clear H13. clear H8 g. *)
-(*       clear ch0. revert st. *)
-(*       induction i; intro st. *)
-(*       + rewrite H1. unfold const, fx. *)
-(*         destruct (st O); destruct (st (S O)); simpl; compute; congruence. *)
-(*       + specialize (H3 i). *)
-(*         destruct H3 as (g & Hwp & H). *)
-(*         repeat wp_inversion. *)
-(*         unfold const in H. *)
-(*         rewrite H. *)
-(*         assert (Hi0 := IHi (upd 1 true (upd 0 true st))). *)
-(*         assert (Hi1 := IHi (upd 1 false (upd 0 true st))). *)
-(*         assert (Hi2 := IHi (upd 1 true (upd 0 false st))). *)
-(*         assert (Hi3 := IHi (upd 1 false (upd 0 false st))). *)
-(*         unfold fx in *. simpl in *. *)
-(*         destruct (st O) eqn:Hx; destruct (st (S O)) eqn:Hy; simpl in *; try lra; *)
-(*         repeat rewrite_equiv; unfold const; lra. *)
-(*     - intros ub Hub st. *)
-(*       unfold upper_bound in Hub. *)
-(*       simpl in *. *)
-(*       unfold fx. *)
-(*       assert (forall i, ch (S (S i)) ==f fun st => if eqb (st O) (st (S O)) *)
-(*                                            then geometric_series (2#9) (5#9) i *)
-(*                                            else fx st). *)
-(*       { clear Hf. clear H6. clear H2. clear H5. clear H9. *)
-(*         clear x. clear H0. clear Hf'1. clear H. *)
-(*         clear H13 ch0. revert st. *)
-(*         clear Hub ub. clear H8 g. *)
-(*         induction i; intro x. *)
-(*         - simpl. *)
-(*           assert (Hch1 := H3 O). *)
-(*           specialize (H3 (S O)). *)
-(*           destruct H3 as (g & Hwp & H3). *)
-(*           rewrite H3. *)
-(*           simpl. *)
-(*           repeat wp_inversion. *)
-(*           destruct Hch1 as (? & Hwp & Hch1). *)
-(*           repeat wp_inversion. *)
-(*           unfold const in *. *)
-(*           unfold fx. *)
-(*           destruct (x O); destruct (x (S O)); simpl; try reflexivity; *)
-(*             repeat rewrite_equiv; rewrite Hch1; simpl; *)
-(*               repeat rewrite_equiv; rewrite H1; reflexivity. *)
-(*         - set (geom := geometric_series (2#9) (5#9) (S i)). *)
-(*           simpl. *)
-(*           destruct (H3 (S (S i))) as (g & Hwp & Hch). *)
-(*           repeat wp_inversion. *)
-(*           rewrite Hch. unfold const. *)
-(*           clear Hch. *)
-(*           unfold fx in *. *)
-(*           destruct (x O); destruct (x (S O)); simpl; *)
-(*             try rewrite 4!IHi; simpl; try reflexivity; *)
-(*               unfold geom; rewrite <- geometric_series_fact; *)
-(*                 rewrite H8; repeat rewrite_equiv; field. } *)
-(*       assert (Hle0: 0 <= 2#9 <= 1). lra. *)
-(*       assert (Hle1: 0 <= 5#9). lra. *)
-(*       assert (Hlt: 5#9 < 1). lra. *)
-(*       destruct (st O) eqn:Hx; destruct (st (S O)) eqn:Hy; simpl. *)
-(*       + assert (forall eps, 0 < eps -> exists n0, (1#2) - ch n0 st < eps). *)
-(*         { intros eps Heps. *)
-(*           generalize (@geometric_series_converges _ _ _ Hle0 Hle1 Hlt Heps). *)
-(*           intros [n0 Hgeom]. *)
-(*           exists (S (S n0)). *)
-(*           rewrite H4. *)
-(*           rewrite Hx. rewrite Hy. simpl. *)
-(*           specialize (Hgeom n0 (Nat.le_refl _)). *)
-(*           assert (H': (2#9) / (1 - (5#9)) == 1#2). *)
-(*           { reflexivity. } *)
-(*           rewrite <- H'. apply Hgeom. } *)
-(*         destruct (Qlt_le_dec (ub st) (1#2)); auto. *)
-(*         * assert (H': 0 < (1#2) - ub st). *)
-(*           { lra. } *)
-(*           specialize (H11 ((1#2) - ub st) H'). *)
-(*           destruct H11 as [n0 H11]. *)
-(*           assert (ub st < ch n0 st). *)
-(*           { lra. } *)
-(*           specialize (Hub n0 st); lra. *)
-(*       + specialize (Hub (S O) st). *)
-(*         specialize (H3 O). clear H6 H8 g. *)
-(*         destruct H3 as (g & Hwp & H3). *)
-(*         rewrite H3 in Hub. *)
-(*         rewrite Hx in Hub. *)
-(*         rewrite Hy in Hub. *)
-(*         apply Hub. *)
-(*       + specialize (Hub O st). rewrite H1 in Hub. apply Hub. *)
-(*       + assert (forall eps, 0 < eps -> exists n0, (1#2) - ch n0 st < eps). *)
-(*         { intros eps Heps. *)
-(*           generalize (@geometric_series_converges _ _ _ Hle0 Hle1 Hlt Heps). *)
-(*           intros [n0 Hgeom]. *)
-(*           exists (S (S n0)). *)
-(*           rewrite H4. *)
-(*           rewrite Hx. rewrite Hy. simpl. *)
-(*           specialize (Hgeom n0 (Nat.le_refl _)). *)
-(*           assert (H': (2#9) / (1 - (5#9)) == 1#2). *)
-(*           { reflexivity. } *)
-(*           rewrite <- H'. apply Hgeom. } *)
-(*         destruct (Qlt_le_dec (ub st) (1#2)); auto. *)
-(*         * assert (H': 0 < (1#2) - ub st). *)
-(*           { lra. } *)
-(*           specialize (H11 ((1#2) - ub st) H'). *)
-(*           destruct H11 as [n0 H11]. *)
-(*           assert (ub st < ch n0 st). *)
-(*           { lra. } *)
-(*           specialize (Hub n0 st). *)
-(*           lra. } *)
-(*   rewrite H5. repeat rewrite_equiv. unfold const. *)
-(*   assert (Hg0 : g0 ==f fun st => if eqb (st O) (st (S O)) then 1#2 else fx st). *)
-(*   { apply f_Qeq_equ; eapply supremum_unique; eauto. } *)
-(*   rewrite Hg0; reflexivity. *)
-(* Qed. *)
-
-Lemma wp_iid_bounded c f :
-  wf_cpGCL c ->
-  (forall x, f x <= 1) ->
-  forall x, wp_iid c f x <= 1.
+Instance Proper_wp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) wp.
 Proof.
-  revert f.
-  induction c; intros f Hwf Hbounded x; simpl; inversion Hwf; subst; auto.
-  - unfold const; lra.
-  - apply IHc1; auto.
-  - destruct (e x); auto.
-  - specialize (IHc1 f H3 Hbounded x).
-    specialize (IHc2 f H4 Hbounded x).
-    nra.
-  - admit.
-    (* destruct (Qeq_dec (wp_iid c (fun st => if e st then 1 else 0) x) 1). *)
-    (* + rewrite q, Qminus_cancel, Qdiv_0_den; lra. *)
-    (* + assert (wp_iid c (fun st => if e st then 1 else 0) x <= 1). *)
-    (*   { apply IHc; auto; intro st; destruct (e st); auto; lra. } *)
-    (*   apply Qle_shift_div_r. lra.       *)
-    (*   cut (wp_iid c (fun st => if e st then 1 else 0) x < 1). *)
-    (*   { intros; lra. } *)
-    (*   nra. *)
-Admitted.
-
-Lemma wp_iid_expectation c f :
-  wf_cpGCL c ->
-  expectation f ->
-  expectation (wp_iid c f).
-Proof.
-  revert f.
-  induction c; intros f Hwf Hexp; simpl; inversion Hwf; subst; auto.
-  - unfold const; intros ?; lra.
-  - intros ?; apply Hexp.
-  - apply IHc1; auto.
-  - intro x; destruct (e x).
-    + apply IHc1; auto.
-    + apply IHc2; auto.
-  - intro x.
-    specialize (IHc1 f H3 Hexp x); specialize (IHc2 f H4 Hexp x).
-    nra.
-  - intro x. simpl.
-    assert (wp_iid c (fun st => if e st then 1 else 0) x <= 1).
-    { apply wp_iid_bounded; auto.
-      intro st; destruct (e st); auto; lra. }
-    destruct (Qeq_dec (wp_iid c (fun st => if e st then 1 else 0) x) 1).
-    + rewrite q, Qminus_cancel, Qdiv_0_den; lra.
-    + apply Qle_shift_div_l. lra. rewrite Qmult_0_l. apply IHc; auto.
-      intro st; destruct (e st); auto; lra.
-  - intro x; destruct (e x); auto; lra.
+  unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst; split; intro Hwp.
+  - revert f g Heq f' g' Heq' Hwp.
+    induction c; intros f g Heq f' g' Heq' Hwp; inversion Hwp; subst.
+    + constructor; intro x; rewrite <- Heq, H; apply Heq'.
+    + constructor; intro x; rewrite <- H, Heq'; reflexivity.
+    + constructor; intro x. rewrite <- Heq, <- H3, Heq'; reflexivity.
+    + econstructor; eauto.
+      eapply IHc2; eauto; reflexivity. intro x; rewrite <- Heq'; apply H5.
+    + assert (Hwp0: wp c1 g g0).
+      { eapply IHc1; eauto; reflexivity. }
+      assert (Hwp1: wp c2 g h).
+      { eapply IHc2; eauto; reflexivity. }
+      econstructor; eauto.
+      intro x; rewrite <- Heq'; auto.
+    + econstructor.
+      * eapply IHc1. auto. apply (f_Qeq_refl g0). auto.
+      * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
+      * intro x; rewrite <- Heq', H6; reflexivity.
+    + econstructor; eauto.
+      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+      exists g0. split; auto.
+      intro x. rewrite Hg0'.
+      destruct (e x); auto; reflexivity.
+      eapply equ_supremum; eauto.
+      apply f_Qeq_equ; auto.
+    + constructor; intro x; rewrite <- Heq', H0.
+      destruct (e x); auto; reflexivity.
+  - revert f g Heq f' g' Heq' Hwp.
+    induction c; intros f g Heq f' g' Heq' Hwp; inversion Hwp; subst.
+    + constructor; intro x; rewrite Heq, Heq'; auto.
+    + constructor; intro x; rewrite <- H, Heq'; reflexivity.
+    + constructor; intro x. rewrite Heq, Heq'; auto.
+    + econstructor; eauto.
+      eapply IHc2; eauto; reflexivity. intro x; rewrite Heq'; apply H5.
+    + assert (Hwp0: wp c1 f g0).
+      { eapply IHc1; eauto; reflexivity. }
+      assert (Hwp1: wp c2 f h).
+      { eapply IHc2; eauto; reflexivity. }
+      econstructor; eauto.
+      intro x; rewrite Heq'; auto.
+    + econstructor.
+      * eapply IHc1. auto. apply (f_Qeq_refl g0). auto.
+      * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
+      * intro x; rewrite Heq', H6; reflexivity.
+    + econstructor; eauto.
+      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+      exists g0. split; auto.
+      intro x. rewrite Hg0'.
+      destruct (e x); auto. reflexivity. rewrite Heq; reflexivity.
+      eapply equ_supremum; eauto.
+      apply f_Qeq_equ; intro x; symmetry; apply Heq'.
+    + constructor; intro x; rewrite  Heq', H0.
+      destruct (e x); symmetry; auto; reflexivity.
 Qed.
 
-Fixpoint loop_chain (e : exp) (c : cpGCL) (i : nat) : cpGCL :=
-  match i with
-  | O => CSeq c (CIte e CAbort CSkip)
-  | S i' => CSeq c (CIte e (loop_chain e c i') CSkip)
-  end.
-
-(* Lemma dfjkgdf (e : exp) x c f : *)
-(*   c <> CAbort -> *)
-(*   (if e x then wp_iid c (fun _ : St => 0) x else f x) == *)
-(*   wp_iid c (fun st' : St => if e st' then 0 else f st') x. *)
-(* Proof. *)
-(*   induction c; simpl; intro Hneq; try congruence; clear Hneq. *)
-(*   - (* Do we need the iid condition here ..? *) *)
-(*     admit. *)
-(*   - unfold compose. *)
-(* Admitted. *)
-
-(* Lemma djuifgdfg (e : exp) x c f : *)
-(*   (if e x then wp_iid c f x else f x) == *)
-(*   wp_iid c (fun st' : St => if e st' then 0 else f st') x. *)
-(* Proof. *)
-(*   induction c; simpl. *)
-(*   - reflexivity. *)
-
-(* Lemma jkdfgdfg e c n f x : *)
-(*   wp_iid (loop_chain e c n) f x == *)
-(*   wp_iid c (fun st => if e st then 0 else f st) x * *)
-(*   sum_Q_list (map (fun i => Qpow (wp_iid c (fun st => if e st then 1 else 0) x) i) (seq 0 n)). *)
-(* Admitted. *)
-
-Lemma wp_iid_chain_geometric_series f e c x i :
-  (* c <> CAbort -> *)
-  wp_iid (loop_chain e c i) f x ==
-  geometric_series (wp_iid c (fun st' : St => if e st' then 0 else f st') x)
-                   (wp_iid c (fun st' : St => if e st' then 1 else 0) x) i.
+Instance Proper_wlp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) wlp.
 Proof.
-  induction i.
+  unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst; split; intro Hwlp.
+  - revert f g Heq f' g' Heq' Hwlp.
+    induction c; intros f g Heq f' g' Heq' Hwlp; inversion Hwlp; subst.
+    + constructor; intro x; rewrite <- Heq, H; apply Heq'.
+    + constructor; intro x; rewrite <- H, Heq'; reflexivity.
+    + constructor; intro x. rewrite <- Heq, <- H3, Heq'; reflexivity.
+    + econstructor; eauto.
+      eapply IHc2; eauto; reflexivity. intro x; rewrite <- Heq'; apply H5.
+    + assert (Hwp0: wlp c1 g g0).
+      { eapply IHc1; eauto; reflexivity. }
+      assert (Hwp1: wlp c2 g h).
+      { eapply IHc2; eauto; reflexivity. }
+      econstructor; eauto.
+      intro x; rewrite <- Heq'; auto.
+    + econstructor.
+      * eapply IHc1. auto. apply (f_Qeq_refl g0). auto.
+      * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
+      * intro x; rewrite <- Heq', H6; reflexivity.
+    + econstructor; eauto.
+      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+      exists g0. split; auto.
+      intro x. rewrite Hg0'.
+      destruct (e x); auto; reflexivity.
+      eapply equ_infimum; eauto.
+      apply f_Qeq_equ; auto.
+    + constructor; intro x; rewrite <- Heq', H0.
+      destruct (e x); auto; reflexivity.
+  - revert f g Heq f' g' Heq' Hwlp.
+    induction c; intros f g Heq f' g' Heq' Hwp; inversion Hwp; subst.
+    + constructor; intro x; rewrite Heq, Heq'; auto.
+    + constructor; intro x; rewrite <- H, Heq'; reflexivity.
+    + constructor; intro x. rewrite Heq, Heq'; auto.
+    + econstructor; eauto.
+      eapply IHc2; eauto; reflexivity. intro x; rewrite Heq'; apply H5.
+    + assert (Hwp0: wlp c1 f g0).
+      { eapply IHc1; eauto; reflexivity. }
+      assert (Hwp1: wlp c2 f h).
+      { eapply IHc2; eauto; reflexivity. }
+      econstructor; eauto.
+      intro x; rewrite Heq'; auto.
+    + econstructor.
+      * eapply IHc1. auto. apply (f_Qeq_refl g0). auto.
+      * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
+      * intro x; rewrite Heq', H6; reflexivity.
+    + econstructor; eauto.
+      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+      exists g0. split; auto.
+      intro x. rewrite Hg0'.
+      destruct (e x); auto. reflexivity. rewrite Heq; reflexivity.
+      eapply equ_infimum; eauto.
+      apply f_Qeq_equ; intro x; symmetry; apply Heq'.
+    + constructor; intro x; rewrite  Heq', H0.
+      destruct (e x); symmetry; auto; reflexivity.
+Qed.
+
+Instance Proper_cwp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) cwp.
+Proof.
+  unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst.
+  unfold cwp, cwp_.
+  split; intros (f'' & g'' & [Hwp Hwlp] & Hrat).
+  - exists f'', g''; split.
+    + split.
+      * eapply Proper_wp; unfold f_Qeq.
+        reflexivity. symmetry. eauto. reflexivity. auto.
+      * apply Hwlp.
+    + intro x; rewrite <- Heq'; auto.
+  - exists f'', g''; split.
+    + split.
+      * eapply Proper_wp; unfold f_Qeq.
+        reflexivity. eauto. reflexivity. auto.
+      * apply Hwlp.
+    + intro x; rewrite Heq'; auto.
+Qed.
+
+Instance Proper_wpf : Proper (eq ==> f_Qeq ==> f_Qeq) wpf.
+Proof.
+  intros c1 c2 Heq; subst.
+  induction c2; intros f g Hqeq st; simpl.
+  - apply Hqeq.
   - reflexivity.
-  - simpl.
-    unfold compose. rewrite <- IHi.
-Admitted.
+  - apply Hqeq.
+  - unfold compose, respectful, f_Qeq in *.
+    rewrite IHc2_1. reflexivity. apply IHc2_2; auto.
+  - destruct (e st).
+    + apply IHc2_1; auto.
+    + apply IHc2_2; auto.
+  - unfold respectful, f_Qeq in *.
+    rewrite IHc2_1, IHc2_2; auto; reflexivity.
+  - unfold respectful, f_Qeq in *.
+    rewrite IHc2. reflexivity.
+    intros; simpl; destruct (e x); auto; reflexivity.
+  - destruct (e st); auto; reflexivity.
+Qed.
 
-Theorem wp_wp_iid (c : cpGCL) (f : St -> Q) :
-  wf_cpGCL c ->
-  expectation f ->
-  wp c f (wp_iid c f).
+Instance Proper_wlpf : Proper (eq ==> f_Qeq ==> f_Qeq) wlpf.
 Proof.
-  revert f. induction c; intros f Hwf Hexp; simpl; inversion Hwf; subst.
-  - constructor. apply f_Qeq_refl.
-  - constructor; apply f_Qeq_refl.
-  - constructor; apply f_Qeq_refl.
-  - unfold compose.
-    econstructor; auto.
-    + apply IHc1; auto.
-      apply wp_iid_expectation; auto.
-    + apply f_Qeq_refl.
-  - econstructor; auto; apply f_Qeq_refl.
-  - econstructor; auto; apply f_Qeq_refl.
-  - apply wp_while with (ch := flip wp_iid f ∘ loop_chain e c).
-    + 
-(*       reflexivity. *)
-(*     + intros i. *)
-(*       admit. (* need iid condition *) *)
-(*     + apply supremum_pointwise; intro x.  *)
-(*       apply geometric_supremum. *)
-(*       * apply wp_iid_expectation; auto. *)
-(*         intro st; destruct (e st); auto; lra. *)
-(*       * apply wp_iid_expectation; auto. *)
-(*         intro st; destruct (e st); auto; lra. *)
-(*       * admit. (* needs to be a separate case probably *) *)
-(*       * intro i; apply wp_iid_chain_geometric_series. *)
-(*   - constructor; apply f_Qeq_refl. *)
-(* Admitted. *)
-Admitted.
+  intros c1 c2 Heq; subst.
+  induction c2; intros f g Hqeq st; simpl.
+  - apply Hqeq.
+  - reflexivity.
+  - apply Hqeq.
+  - unfold compose, respectful, f_Qeq in *.
+    rewrite IHc2_1. reflexivity. apply IHc2_2; auto.
+  - destruct (e st).
+    + apply IHc2_1; auto.
+    + apply IHc2_2; auto.
+  - unfold respectful, f_Qeq in *.
+    rewrite IHc2_1, IHc2_2; auto; reflexivity.
+  - unfold respectful, f_Qeq in *.
+    set (a := wlpf c2 (fun st' : St => if e st' then 0 else f st') st).
+    set (r := wpf c2 (fun st' : St => if e st' then 1 else 0) st).
+    destruct (Qeq_dec r 1).
+    + rewrite Qeq_eq_bool; lra.
+    + rewrite Qeq_bool_false; auto.
+      rewrite IHc2. reflexivity.
+    intros; simpl; destruct (e x). reflexivity.
+    rewrite Hqeq; reflexivity.
+  - destruct (e st); auto; reflexivity.
+Qed.

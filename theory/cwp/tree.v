@@ -1,3 +1,5 @@
+(** Choice trees with fix (loop) nodes. *)
+
 Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import List.

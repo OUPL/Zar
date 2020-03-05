@@ -1,5 +1,6 @@
-Set Implicit Arguments.
+(** Things pertaining to rational numbers. *)
 
+Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import List.
 Require Import Coq.QArith.QArith.
@@ -19,9 +20,12 @@ Fixpoint Qpow (x : Q) (n : nat) :=
   | S n' => x * Qpow x n'
   end.
 
-Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x.
+(* Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x. *)
+(* Notation "f '==f' g" := (f_Qeq f g) (at level 80, no associativity) : Q_scope. *)
+(* Local Open Scope Q_scope. *)
 
-Notation "f '==f' g" := (f_Qeq f g) (at level 80, no associativity) : Q_scope.
+Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x.
+Notation "f '==f' g" := (forall x, f x == g x) (at level 80, no associativity) : Q_scope.
 Local Open Scope Q_scope.
 
 
@@ -80,6 +84,41 @@ Lemma Qeq_Qdiv (a b c d : Q) :
   a == c -> b == d -> a / b == c / d.
 Proof. intros H0 H1; rewrite H0, H1; reflexivity. Qed.
 
+Lemma Qle_Qdiv (a b c : Q) :
+  a <= b -> 0 <= c -> a / c <= b / c.
+Proof.
+  intros H0 H1.
+  destruct (Qeq_dec c 0).
+  - rewrite q; rewrite 2!Qdiv_0_den; lra.
+  - apply Qle_shift_div_l. lra. 
+    assert (a / c * c == a).
+    { field; auto. }
+    rewrite H; auto.
+Qed.
+
+Lemma Qle_Qdiv' (a b c : Q) :
+  0 < c -> a / c <= b / c -> a <= b.
+Proof.
+  intros H0 H1.
+  assert (a / c * c <= b / c * c).
+  { nra. }
+  assert (a / c * c == a).
+  { field; auto. lra. }
+  assert (b / c * c == b).
+  { field; auto. lra. }
+  lra.
+Qed.
+
+Lemma Qlt_Qdiv (a b c : Q) :
+  a < b -> 0 < c -> a / c < b / c.
+Proof.
+  intros H0 H1.
+  apply Qlt_shift_div_l; auto.
+  assert (a / c * c == a).
+  { field; lra. }
+  rewrite H; auto.
+Qed.
+
 Lemma Qeq_Qminus (a b c d : Q) :
   a == c -> b == d -> a - b == c - d.
 Proof. intros; lra. Qed.
@@ -131,7 +170,7 @@ Lemma sum_Q_list_Qpow a r n m :
   sum_Q_list (map (fun x : nat => a * Qpow r x) (seq (S m) n)).
 Proof.
   rewrite sum_Q_list_succ; apply sum_Q_list_proper;
-    intros; simpl; intros ?; field.
+    intros; simpl; field.
 Qed.
 
 Lemma Qeq_respects_eq {A : Type} (f : A -> Q) (x y : A) :
@@ -170,6 +209,7 @@ Proof.
   - reflexivity.
   - rewrite IHm, Heq1; reflexivity.
 Qed.
+
 Lemma Qlem_1 a b c :
   ~ c == 0 -> a / c == b -> a == b * c.
 Proof.
@@ -218,4 +258,39 @@ Proof.
   - assert (0 <= sum_Q_list l).
     { apply IHl; intros x Hin; apply Hle; right; auto. }
     specialize (Hle a (in_eq _ _)); lra.
+Qed.
+
+Lemma Qeq_bool_false a b :
+  ~ a == b ->
+  Qeq_bool a b = false.
+Proof.
+  intros Hneq; destruct (Qeq_bool a b) eqn: H; auto.
+  exfalso; apply Hneq; apply Qeq_bool_iff; auto.
+Qed.
+
+Lemma Qlt_Qplus_Qdiv2 a b c :
+  a < c/(2#1) ->
+  b < c/(2#1) ->
+  a + b < c.
+Proof.
+  intros Ha Hb.
+  assert (c == c/(2#1) + c/(2#1)).
+  { field. }
+  rewrite H; lra.
+Qed.
+
+Lemma ratio_Qle_sum a b c :
+  b < 1 ->
+  a / (1 - b) <= c <-> a + b * c <= c.
+Proof.
+  intro H0; split; intro H1.
+  - cut (a <= c - b * c).
+    { lra. }
+    cut (a <= c * (1 - b)).
+    { lra. }
+    cut (a / (1-b) <= c * (1-b) / (1-b)).
+    { intro H2. apply Qle_Qdiv' in H2; lra. }
+    apply Qle_shift_div_l. lra.
+    apply Qmult_le_compat_r; auto; lra.
+  - apply Qle_shift_div_r; lra.
 Qed.

@@ -1,3 +1,5 @@
+(** Compiling commands to trees and some associated lemmas. *)
+
 Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import ExtLib.Structures.Monad.
@@ -55,30 +57,27 @@ Lemma compile_bound_n_m (c : cpGCL) (n m : nat) (k : St -> tree St) :
   (n <= m)%nat.
 Proof.
   revert n m k.
-  induction c; intros m m' k Hc; try solve [inversion Hc; subst; lia].
-  - inversion Hc; subst.
-    destruct (runState (compile c1) m) eqn:Hc1.
+  induction c; intros m m' k Hc;
+    try solve [inversion Hc; subst; lia]; inversion Hc; subst.
+  - destruct (runState (compile c1) m) eqn:Hc1.
     destruct (runState (compile c2) n) eqn:Hc2.
     inversion H0; subst; clear H0.
     etransitivity.
     eapply IHc1; eauto.
     eapply IHc2; eauto.
-  - inversion Hc; subst.
-    destruct (runState (compile c1) m) eqn:Hc1.
+  - destruct (runState (compile c1) m) eqn:Hc1.
     destruct (runState (compile c2) n) eqn:Hc2.
     inversion H0; subst; clear H0.
     etransitivity.
     eapply IHc1; eauto.
     eapply IHc2; eauto.
-  - inversion Hc; subst.
-    destruct (runState (compile c1) m) eqn:Hc1.
+  - destruct (runState (compile c1) m) eqn:Hc1.
     destruct (runState (compile c2) n) eqn:Hc2.
     inversion H0; subst; clear H0.
     etransitivity.
     eapply IHc1; eauto.
     eapply IHc2; eauto.
-  - inversion Hc; subst.
-    destruct (runState (compile c) (S m)) eqn:Hc1.
+  - destruct (runState (compile c) (S m)) eqn:Hc1.
     inversion H0; subst; clear H0.
     apply IHc in Hc1; lia.
 Qed.
@@ -87,14 +86,12 @@ Lemma compile_bound_labels (c : cpGCL) (n m : nat) (k : St -> tree St) :
   runState (compile c) n = (k, m) ->
   forall l st, bound_in l (k st) -> n < l <= m.
 Proof.
-  revert n m k. induction c; intros m m' k Hc l st Hbound; simpl in Hc.
-  - inversion Hc; subst.
-    inversion Hbound.
-  - inversion Hc; subst.
-    unfold compose, const in Hbound.
+  revert n m k.
+  induction c; intros m m' k Hc l st Hbound; simpl in Hc; inversion Hc; subst.
+  - inversion Hbound.
+  - unfold compose, const in Hbound.
     inversion Hbound; subst. lia. inversion H3.
-  - inversion Hc; subst.
-    inversion Hbound.
+  - inversion Hbound.
   - destruct (runState (compile c1) m) eqn:Hc1.
     destruct (runState (compile c2) n) eqn:Hc2.
     inversion Hc; subst; clear Hc.
@@ -124,7 +121,7 @@ Proof.
     unfold compose in Hbound.
     inversion Hbound; subst.
     + apply compile_bound_n_m in Hc1; lia.
-    + apply bound_in_bind' in H3.
+    + apply bound_in_bind' in H4.
       * eapply IHc in Hc1; eauto; lia.
       * intro x; destruct (e x); constructor.
   - inversion Hc; subst; clear Hc.

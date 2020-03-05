@@ -1,5 +1,6 @@
-Set Implicit Arguments.
+(** Inference on trees. *)
 
+Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import Nat.
 Require Import List.
@@ -255,6 +256,61 @@ Proof.
         constructor; auto.
         destruct (Nat.eqb_spec m' n); subst. constructor. constructor; auto.
 Qed.
+
+Lemma infer_f_lib_bind {A B : Type} (f : B -> Q) (t : tree A) (k : A -> tree B) :
+  (forall n x, bound_in n t -> not_in n (k x)) ->
+  infer_f_lib (infer_f_lib f ∘ k) t == infer_f_lib f (tree_bind t k).
+Proof.
+  revert f k. induction t; intros f k Hnotin; try reflexivity.
+  - simpl; rewrite IHt1, IHt2; try reflexivity;
+      intros n st Hbound; apply Hnotin;
+        try solve [apply bound_in_choice2; auto]; constructor; auto.
+  - simpl.
+    destruct (Qeq_dec (infer_fail n t) 1).
+    { rewrite q; simpl.
+      destruct (Qeq_dec (infer_fail n (tree_bind t k)) 1).
+      { rewrite q0; simpl; reflexivity. }
+      (* rewrite Qeq_bool_false; auto. *)
+      (* TODO: q and n0 are contradictory because q implies infer_fail
+         n (bind t k) == 1 for any k. *)
+      admit. }
+    destruct (Qeq_dec (infer_fail n (tree_bind t k)) 1).
+    { rewrite q. simpl.
+      rewrite Qeq_bool_false; auto.
+      rewrite IHt.
+      - admit.
+      - intros m x Hbound; apply Hnotin.
+        destruct (Nat.eqb_spec m n); subst; constructor; auto. }
+    rewrite 2!Qeq_bool_false; auto.
+    rewrite IHt; auto.
+    + admit.
+    + intros m x Hbound; apply Hnotin.
+      destruct (Nat.eqb_spec m n); subst; constructor; auto.
+Admitted.
+      
+(*     apply Qeq_Qdiv. *)
+(*     + apply IHt; intros n0 st Hbound; apply Hnotin. *)
+(*       destruct (Nat.eqb_spec n0 n); subst; constructor; auto. *)
+(*     + apply Qeq_Qminus; try reflexivity. *)
+(*       clear IHt. revert Hnotin. revert k n. induction t; intros k m Hnotin. *)
+(*       * simpl. rewrite not_in_infer_fail. reflexivity. apply Hnotin. constructor. *)
+(*       * simpl. reflexivity. *)
+(*       * simpl. rewrite IHt1, IHt2. reflexivity. *)
+(*         intros m' x Hbound. apply Hnotin. inversion Hbound; subst. *)
+(*         constructor. constructor; auto. apply bound_in_choice2; auto. *)
+(*         intros m' x Hbound. apply Hnotin. inversion Hbound; subst. *)
+(*         constructor. constructor; auto. constructor; auto. *)
+(*       * simpl. rewrite IHt. rewrite IHt. reflexivity. *)
+(*         intros m' x Hbound. apply Hnotin. *)
+(*         inversion Hbound; subst. *)
+(*         destruct (Nat.eqb_spec n m); subst. constructor. constructor; auto. *)
+(*         destruct (Nat.eqb_spec m' m); subst. constructor. constructor; auto. *)
+(*         intros m' x Hbound. apply Hnotin. *)
+(*         inversion Hbound; subst. *)
+(*         constructor. *)
+(*         constructor; auto. *)
+(*         destruct (Nat.eqb_spec m' n); subst. constructor. constructor; auto. *)
+(* Qed. *)
 
 Lemma infer_fail_fbind {A : Type} (t1 t2  : tree A) (l m : nat) :
   l <> m ->
@@ -1070,7 +1126,7 @@ Proof.
       apply bound_in_not_bound_in in HC'; congruence.
 Qed.
 
-Lemma infer_f_tree_bind t e f m :
+Lemma infer_f_bind_fail t e f m :
   not_bound_in m t ->
   infer_f (fun st => if e st : bool then 0 else f st) t ==
   infer_f f (tree_bind t (fun st => if e st then Fail St m else Leaf st)).
@@ -1086,6 +1142,23 @@ Proof.
     intro Heq; rewrite Heq; reflexivity.
 Qed.
 
+Lemma infer_f_lib_bind_fail t e f m :
+  not_bound_in m t ->
+  infer_f_lib (fun st => if e st : bool then 0 else f st) t ==
+  infer_f_lib f (tree_bind t (fun st => if e st then Fail St m else Leaf st)).
+Proof.
+(*   revert e f m. *)
+(*   induction t; intros e f m Hnotbound; *)
+(*     unfold tree_bind; simpl; inversion Hnotbound; subst. *)
+(*   - destruct (e a); reflexivity. *)
+(*   - reflexivity. *)
+(*   - rewrite IHt1, IHt2; eauto; reflexivity. *)
+(*   - rewrite IHt; eauto. *)
+(*     generalize (@not_bound_in_infer_fail_tree_bind t e n m (not_eq_sym H2) H3). *)
+(*     intro Heq; rewrite Heq; reflexivity. *)
+(* Qed. *)
+Admitted.
+
 Lemma infer_f_proper {A : Type} (t : tree A) (f g : A -> Q) :
   f ==f g ->
   infer_f f t == infer_f g t.
@@ -1100,6 +1173,11 @@ Qed.
 Lemma infer_f_lib'_bind {A B : Type} (f : B -> Q) (t : tree A) (k : A -> tree B) :
   (forall n x, bound_in n t -> not_in n (k x)) ->
   infer_f_lib' (infer_f_lib' f ∘ k) t == infer_f_lib' f (tree_bind t k).
+Admitted.
+
+Lemma infer_f_lib_proper {A : Type} (t : tree A) (f g : A -> Q) :
+  f ==f g ->
+  infer_f_lib f t == infer_f_lib g t.
 Admitted.
 
 Lemma infer_f_lib'_proper {A : Type} (t : tree A) (f g : A -> Q) :

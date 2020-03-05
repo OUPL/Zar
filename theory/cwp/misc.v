@@ -1,5 +1,6 @@
-Set Implicit Arguments.
+(** Miscellaneous definitions and lemmas that don't fit anywhere else. *)
 
+Set Implicit Arguments.
 Require Import PeanoNat.
 Require Import List.
 Require Import Coq.micromega.Lia.
