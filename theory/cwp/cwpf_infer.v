@@ -64,26 +64,28 @@ Proof.
     set (g := fun st' => if e st' then 0 else f st').
     set (h := fun st' => if e st' then 1 else 0).
     set (k := fun st' => if e st' then Fail St (S m) else Leaf st').
-    cut (wpf c g st == infer_f f (tree_bind (t st) k)).
-    cut (wpf c h st == infer_fail (S m) (tree_bind (t st) k)).
-    { intros H1 H2; rewrite H1, H2; reflexivity. }
-    + unfold h. unfold k.
-      rewrite infer_fail_tree_bind_infer_f.
-      specialize (IHc' (S m) (fun st => if e st then 1 else 0) H0 st).
-      rewrite Hc in IHc'. simpl in IHc'.
-      apply IHc'.
-      apply label_in_not_in; intro HC. apply label_in_bound_or_free in HC.
-      destruct HC as [HC|HC].
-      * eapply compile_bound_labels in Hc; eauto; lia.
-      * eapply compile_free_in_0 in Hc; eauto; lia.
-      * eapply compile_wf_tree'; eauto.
-    + specialize (IHc' (S m) g H0 st).
-      rewrite IHc'. rewrite Hc. simpl.
-      unfold g. unfold k.
-      rewrite infer_f_bind_fail.
-      * reflexivity.
-      * apply bound_in_not_bound_in; intro HC.
-        eapply compile_bound_labels in Hc; eauto; lia.
+    destruct (e st).
+    + cut (wpf c g st == infer_f f (tree_bind (t st) k)).
+      cut (wpf c h st == infer_fail (S m) (tree_bind (t st) k)).
+      { intros H1 H2; rewrite H1, H2; reflexivity. }
+      * unfold h. unfold k.
+        rewrite infer_fail_tree_bind_infer_f.
+        specialize (IHc' (S m) (fun st => if e st then 1 else 0) H0 st).
+        rewrite Hc in IHc'. simpl in IHc'.
+        apply IHc'.
+        apply label_in_not_in; intro HC. apply label_in_bound_or_free in HC.
+        destruct HC as [HC|HC].
+        ++ eapply compile_bound_labels in Hc; eauto; lia.
+        ++ eapply compile_free_in_0 in Hc; eauto; lia.
+        ++ eapply compile_wf_tree'; eauto.
+      * specialize (IHc' (S m) g H0 st).
+        rewrite IHc'. rewrite Hc. simpl.
+        unfold g. unfold k.
+        rewrite infer_f_bind_fail.
+        ++ reflexivity.
+        ++ apply bound_in_not_bound_in; intro HC.
+           eapply compile_bound_labels in Hc; eauto; lia.
+    + reflexivity.
   - destruct (e st); reflexivity.
 Qed.
 
@@ -135,31 +137,33 @@ Proof.
     set (g := fun st' => if e st' then 0 else f st').
     set (h := fun st' => if e st' then 1 else 0).
     set (k := fun st' => if e st' then Fail St (S m) else Leaf st').
-    cut (wlpf c g st == infer_f_lib f (tree_bind (t st) k)).
-    cut (wpf c h st == infer_fail (S m) (tree_bind (t st) k)).
-    { intros H1 H2. rewrite H1.
-    destruct (Qeq_dec (infer_fail (S m) (tree_bind (t st) k)) 1).
-    { rewrite Qeq_eq_bool; auto; reflexivity. }
-    rewrite Qeq_bool_false; auto.
-    rewrite H1, H2. reflexivity. }
-    + unfold h. unfold k.
-      rewrite infer_fail_tree_bind_infer_f.
-      specialize (IHc' (S m) (fun st => if e st then 1 else 0) H0 st).
-      rewrite Hc in IHc'. simpl in IHc'.
-      generalize (@wpf_infer_f c (indicator e) (S m) H0 st).
-      unfold compose, evalCompile, evalState; rewrite Hc; auto.
-      apply label_in_not_in; intro HC. apply label_in_bound_or_free in HC.
-      destruct HC as [HC|HC].
-      * eapply compile_bound_labels in Hc; eauto; lia.
-      * eapply compile_free_in_0 in Hc; eauto; lia.
-      * eapply compile_wf_tree'; eauto.
-    + specialize (IHc' (S m) g H0 st).
-      rewrite IHc'. rewrite Hc. simpl.
-      unfold g. unfold k.
-      rewrite infer_f_lib_bind_fail.
-      * reflexivity.
-      * apply bound_in_not_bound_in; intro HC.
-        eapply compile_bound_labels in Hc; eauto; lia.
+    destruct (e st).
+    + cut (wlpf c g st == infer_f_lib f (tree_bind (t st) k)).
+      cut (wpf c h st == infer_fail (S m) (tree_bind (t st) k)).
+      { intros H1 H2. rewrite H1; simpl.
+        destruct (Qeq_dec (infer_fail (S m) (tree_bind (t st) k)) 1).
+        { rewrite Qeq_eq_bool; auto; reflexivity. }
+        rewrite Qeq_bool_false; auto.
+        rewrite H1, H2. reflexivity. }
+      * unfold h. unfold k.
+        rewrite infer_fail_tree_bind_infer_f.
+        specialize (IHc' (S m) (fun st => if e st then 1 else 0) H0 st).
+        rewrite Hc in IHc'. simpl in IHc'.
+        generalize (@wpf_infer_f c (indicator e) (S m) H0 st).
+        unfold compose, evalCompile, evalState; rewrite Hc; auto.
+        apply label_in_not_in; intro HC. apply label_in_bound_or_free in HC.
+        destruct HC as [HC|HC].
+        ++ eapply compile_bound_labels in Hc; eauto; lia.
+        ++ eapply compile_free_in_0 in Hc; eauto; lia.
+        ++ eapply compile_wf_tree'; eauto.
+      * specialize (IHc' (S m) g H0 st).
+        rewrite IHc'. rewrite Hc. simpl.
+        unfold g. unfold k.
+        rewrite infer_f_lib_bind_fail.
+        ++ reflexivity.
+        ++ apply bound_in_not_bound_in; intro HC.
+           eapply compile_bound_labels in Hc; eauto; lia.
+    + reflexivity.
   - destruct (e st); reflexivity.
 Qed.
 

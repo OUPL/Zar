@@ -72,9 +72,28 @@ Next Obligation. destruct p as [? H]; apply H. Qed.
 Definition equ {A : Type} `{OType A} (x y : A) :=
   leq x y /\ leq y x.
 
+Instance Reflexive_equ A `{o : OType A} : Reflexive equ.
+Proof. destruct o as [? [Hrefl ?]]; split; apply Hrefl. Qed.
+
+Instance Transitive_equ A `{o : OType A} : Transitive equ.
+Proof.
+  intros x y z Hxy Hyz.
+  destruct o as [? [? Htrans]]; split.
+  - etransitivity. apply Hxy. apply Hyz.
+  - etransitivity. apply Hyz. apply Hxy.
+Qed.
+
+Instance Symmetric_equ A `{o : OType A} : Symmetric equ.
+Proof. unfold Symmetric, equ; intuition. Qed.
+
+
 (** f is an ω-chain *)
 Definition chain {A : Type} `{o : OType A} (f : nat -> A) : Prop :=
   forall i, leq (f i) (f (S i)).
+
+(** f is a decreasing ω-chain *)
+Definition dec_chain {A : Type} `{o : OType A} (f : nat -> A) : Prop :=
+  forall i, leq (f (S i)) (f i).
 
 (** Apply all functions in a chain to the same argument x. *)
 Definition app_chain {A : Type} (ch : nat -> A -> Q) (x : A) : nat -> Q :=
@@ -190,6 +209,19 @@ Proof.
       apply Hchain.
 Qed.
 
+Lemma dec_chain_leq {A : Type} `{o : OType A} (f : nat -> A) (n m : nat) :
+  dec_chain f ->
+  (n <= m)%nat ->
+  leq (f m) (f n).
+Proof.
+  intros Hchain Hle; induction m.
+  - assert (n = O). lia. subst; reflexivity.
+  - destruct (Nat.eqb_spec n (S m)); subst.
+    + reflexivity.
+    + assert (H': (n <= m)%nat). lia.
+      etransitivity. apply Hchain. apply IHm; auto.
+Qed.
+
 Lemma const_infimum {A : Type} {o : OType A} (ch : nat -> A) (c : A) :
   (forall i, equ (ch i) c) -> infimum c ch.
 Proof.
@@ -198,6 +230,25 @@ Proof.
   - intros lb Hlb.
     specialize (Hlb O); specialize (Hequ O).
     etransitivity; eauto; apply Hequ.
+Qed.
+
+Lemma const_infimum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) :
+  dec_chain f ->
+  (exists n0, forall n, (n0 <= n)%nat -> equ (f n) x) ->
+  infimum x f.
+Proof.
+  intros Hchain [n0 Hequ].
+  split.
+  - intro y.
+    destruct (Nat.leb_spec0 y n0).
+    + transitivity (f n0).
+      * apply Hequ; auto.
+      * apply dec_chain_leq; auto.
+    + apply Hequ; lia.
+  - intros lb Hlb.
+    transitivity (f n0).
+    apply Hlb.
+    apply Hequ; auto.
 Qed.
 
 Lemma const_supremum {A : Type} {o : OType A} (f : nat -> A) (x : A) :
@@ -210,10 +261,24 @@ Proof.
     etransitivity; eauto; apply Hequ.
 Qed.
 
-(* Lemma const_supremum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) : *)
-(*   (exists n0, forall n, (n0 <= n)%nat -> leq (f O) (f n0) /\ equ (f n) x) -> *)
-(*   supremum x f. *)
-(* Admitted. *)
+Lemma const_supremum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) :
+  chain f ->
+  (exists n0, forall n, (n0 <= n)%nat -> equ (f n) x) ->
+  supremum x f.
+Proof.
+  intros Hchain [n0 Hequ].
+  split.
+  - intro y.
+    destruct (Nat.leb_spec0 y n0).
+    + transitivity (f n0).
+      * apply chain_leq; auto.
+      * apply Hequ; auto.
+    + apply Hequ; lia.
+  - intros ub Hub.
+    transitivity (f n0).
+    apply Hequ; auto.
+    apply Hub.
+Qed.
 
 (* x is a fixed point of f *)
 Definition fixed_point {A : Type} (x : A) (f : A -> A) :=

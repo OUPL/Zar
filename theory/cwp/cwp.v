@@ -106,8 +106,10 @@ Fixpoint wpf (c : cpGCL) (f : St -> Q) : St -> Q :=
   | CChoice p c1 c2 => fun st => p * wpf c1 f st + (1-p) * wpf c2 f st
   | CWhile e body =>
     fun st =>
-      wpf body (fun st' => if e st' then 0 else f st') st /
-             (1 - wpf body (fun st' => if e st' then 1 else 0) st)
+      if e st then
+        wpf body (fun st' => if e st' then 0 else f st') st /
+            (1 - wpf body (fun st' => if e st' then 1 else 0) st)
+      else f st
   | CObserve e => fun st => if e st then f st else 0
   end.
 
@@ -123,9 +125,11 @@ Fixpoint wlpf (c : cpGCL) (f : St -> Q) : St -> Q :=
   | CChoice p c1 c2 => fun st => p * wlpf c1 f st + (1-p) * wlpf c2 f st
   | CWhile e body =>
     fun st =>
-      let a := wlpf body (fun st' => if e st' then 0 else f st') st in
-      let r := wpf body (fun st' => if e st' then 1 else 0) st in
-      if Qeq_bool r 1 then 1 else a / (1 - r)
+      if e st then
+        let a := wlpf body (fun st' => if e st' then 0 else f st') st in
+        let r := wpf body (fun st' => if e st' then 1 else 0) st in
+        if Qeq_bool r 1 then 1 else a / (1 - r)
+      else f st
   | CObserve e => fun st => if e st then f st else 0
   end.
 
@@ -356,6 +360,7 @@ Proof.
   - unfold respectful, f_Qeq in *.
     rewrite IHc2_1, IHc2_2; auto; reflexivity.
   - unfold respectful, f_Qeq in *.
+    destruct (e st); auto.
     rewrite IHc2. reflexivity.
     intros; simpl; destruct (e x); auto; reflexivity.
   - destruct (e st); auto; reflexivity.
@@ -376,6 +381,7 @@ Proof.
   - unfold respectful, f_Qeq in *.
     rewrite IHc2_1, IHc2_2; auto; reflexivity.
   - unfold respectful, f_Qeq in *.
+    destruct (e st); auto.
     set (a := wlpf c2 (fun st' : St => if e st' then 0 else f st') st).
     set (r := wpf c2 (fun st' : St => if e st' then 1 else 0) st).
     destruct (Qeq_dec r 1).

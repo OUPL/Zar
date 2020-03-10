@@ -11,6 +11,7 @@ Import ListNotations.
 
 Require Import misc.
 Require Import order.
+Require Import Q.
 
 (** Choice trees with fix (loop) nodes ("fix trees"?) *)
 Inductive tree (A : Type) : Type :=
@@ -560,6 +561,86 @@ Proof.
   induction t; simpl; intro Hwf; constructor; inversion Hwf; subst; auto.
   apply bound_in_not_bound_in; intro HC.
   apply H2 in HC; lia.
+Qed.
+
+Inductive all_support {A : Type} (pred : A -> Prop) : tree A -> Prop :=
+| all_support_leaf : forall x, pred x -> all_support pred (Leaf x)
+| all_support_fail : forall n, all_support pred (Fail _ n)
+| all_support_choice1 : forall p t1 t2,
+    p == 0 ->
+    all_support pred t2 ->
+    all_support pred (Choice p t1 t2)
+| all_support_choice2 : forall p t1 t2,
+    p == 1 ->
+    all_support pred t1 ->
+    all_support pred (Choice p t1 t2)
+| all_support_choice3 : forall p t1 t2,
+    0 < p -> p < 1 ->
+    all_support pred t1 ->
+    all_support pred t2 ->
+    all_support pred (Choice p t1 t2)
+| all_support_fix : forall l t,
+    all_support pred t ->
+    all_support pred (Fix l t).
+
+Fixpoint all_supportb {A : Type} (f : A -> bool) (t : tree A) : bool :=
+  match t with
+  | Leaf x => f x
+  | Fail _ _ => true
+  | Choice p t1 t2 =>
+    if Qeq_bool p 0
+    then all_supportb f t2
+    else if Qeq_bool p 1
+         then all_supportb f t1
+         else all_supportb f t1 && all_supportb f t2
+  | Fix n t1 => all_supportb f t1
+  end.
+
+Lemma wf_tree_inv_choice1 {A : Type} p (t1 t2 : tree A) :
+  wf_tree (Choice p t1 t2) ->
+  wf_tree t1.
+Proof. intro Hwf; inversion Hwf; auto. Qed.
+
+Lemma wf_tree_inv_choice2 {A : Type} p (t1 t2 : tree A) :
+  wf_tree (Choice p t1 t2) ->
+  wf_tree t2.
+Proof. intro Hwf; inversion Hwf; auto. Qed.
+
+Lemma all_supportb_spec {A : Type} (f : A -> bool) (t : tree A) :
+  wf_tree t ->
+  reflect (all_support (fun x => f x = true) t) (all_supportb f t).
+Proof.
+  induction t; intro Hwf; simpl.
+  - destruct (f a) eqn:Hf; constructor.
+    + constructor; auto.
+    + intro HC; inversion HC; subst; congruence.
+  - repeat constructor.
+  - destruct (Qeq_dec q 0).
+    + rewrite Qeq_eq_bool; auto.
+      destruct IHt2.
+      * eapply wf_tree_inv_choice2; eauto.
+      * repeat constructor; auto.
+      * constructor; intro HC; inversion HC; subst; try congruence; lra.
+    + rewrite Qeq_bool_false; auto.
+      destruct (Qeq_dec q 1).
+      * rewrite Qeq_eq_bool; auto.
+        destruct IHt1.
+        ++ eapply wf_tree_inv_choice1; eauto.
+        ++ constructor; apply all_support_choice2; auto.
+        ++ constructor; intro HC; inversion HC; subst; congruence; try lra.
+      * rewrite Qeq_bool_false; auto.
+        destruct IHt1, IHt2; simpl;
+          try solve [eapply wf_tree_inv_choice1; eauto];
+          try solve [eapply wf_tree_inv_choice2; eauto]; constructor.
+        ++ inversion Hwf; subst.
+           apply all_support_choice3; auto; lra.
+        ++ intro HC; inversion HC; subst; congruence.
+        ++ intro HC; inversion HC; subst; congruence.
+        ++ intro HC; inversion HC; subst; congruence.
+  - destruct IHt.
+    + inversion Hwf; auto.
+    + repeat constructor; auto.
+    + constructor. intro HC; inversion HC; congruence.
 Qed.
 
 Lemma bound_in_bind {A B : Type} (t : tree A) (k : A -> tree B) (m : nat) :

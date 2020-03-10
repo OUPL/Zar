@@ -43,11 +43,23 @@ Proof.
   apply wlp_wlpf; auto.
 Qed.
 
-Theorem cwp_infer (c : cpGCL) (f f' : St -> Q) (n : nat) :
+(* Theorem cwp_infer (c : cpGCL) (f f' : St -> Q) (n : nat) : *)
+(*   wf_cpGCL c -> *)
+(*   iid_cpGCL c -> *)
+(*   expectation f -> *)
+(*   cwp c f (infer f ∘ evalCompile c n). *)
+(* Proof. *)
+(*   intros Hwf Hiid Hexp. *)
+(*   eapply Proper_cwp. reflexivity. reflexivity. *)
+(*   intro; symmetry; apply cwpf_infer; auto. *)
+(*   apply cwp_cwpf; auto. *)
+(* Qed. *)
+
+Theorem cwp_infer (c : cpGCL) (f f' : St -> Q) :
   wf_cpGCL c ->
   iid_cpGCL c ->
   expectation f ->
-  cwp c f (infer f ∘ evalCompile c n).
+  cwp c f (infer f ∘ evalCompile' c).
 Proof.
   intros Hwf Hiid Hexp.
   eapply Proper_cwp. reflexivity. reflexivity.

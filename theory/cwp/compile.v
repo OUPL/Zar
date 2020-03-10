@@ -31,14 +31,16 @@ Fixpoint compile (c : cpGCL) : state nat (St -> tree St) :=
          (fun k1 => bind (compile c2)
                       (fun k2 => ret (fun st => Choice p (k1 st) (k2 st))))
   | CWhile e body =>
-    (** Generate the bound label before compiling the body so
-        the tree is well-formed wrt the ordering the bound labels. *)
+    (** Generate the bound label before compiling the body so the tree
+        is well-formed wrt the required ordering on bound labels. *)
     bind freshLabel
          (fun l => bind (compile body)
-                     (fun k => ret (fun st => Fix l (bind (k st)
-                                                    (fun st' => if e st'
-                                                             then Fail _ l
-                                                             else Leaf st')))))
+                     (fun k => ret (fun st => if e st then
+                                          Fix l (bind (k st)
+                                                      (fun st' => if e st'
+                                                               then Fail _ l
+                                                               else Leaf st'))
+                                        else Leaf st)))
   | CObserve e =>
     ret (fun st => if e st then Leaf st else Fail _ O)
   end.
@@ -117,15 +119,15 @@ Proof.
     + eapply IHc2 in Hc2; eauto.
       apply compile_bound_n_m in Hc1; lia.
   - destruct (runState (compile c) (S m)) eqn:Hc1.
-    inversion Hc; subst; clear Hc.
-    unfold compose in Hbound.
-    inversion Hbound; subst.
-    + apply compile_bound_n_m in Hc1; lia.
-    + apply bound_in_bind' in H4.
-      * eapply IHc in Hc1; eauto; lia.
-      * intro x; destruct (e x); constructor.
-  - inversion Hc; subst; clear Hc.
-    destruct (e st); inversion Hbound.
+    inversion Hc. subst.
+    destruct (e st).
+    + inversion Hbound; subst.
+      * apply compile_bound_n_m in Hc1; lia.
+      * apply bound_in_bind' in H4.
+        ++ eapply IHc in Hc1; eauto; lia.
+        ++ intro x; destruct (e x); constructor.
+    + inversion Hbound.
+  - destruct (e st); inversion Hbound.
 Qed.
 
 Lemma compile_bound_in_0_lt (c : cpGCL) (n n' m : nat) (k : St -> tree St) (x : St) :
@@ -158,10 +160,13 @@ Proof.
     + eapply IHc2; eauto.
   - destruct (runState (compile c) (S n')) eqn:Hc1.
     inversion Hc; subst; clear Hc H0.
-    inversion Hbound; subst. lia.
-    apply bound_in_bind' in H3.
-    + eapply IHc; eauto.
-    + intro y; destruct (e y); constructor; auto.
+    destruct (e x).
+    + inversion Hbound; subst.
+      * lia.
+      * apply bound_in_bind' in H3.
+        ++ eapply IHc; eauto.
+        ++ intro y; destruct (e y); constructor; auto.
+    + inversion Hbound.
   - destruct (e x); inversion Hbound.
 Qed.
 
@@ -198,10 +203,12 @@ Proof.
     + eapply IHc2; eauto.
   - destruct (runState (compile c) (S n')) eqn:Hc1.
     inversion Hc; subst; clear Hc.
-    inversion Hfree; subst.
+    destruct (e x).
+    + inversion Hfree; subst.
     apply free_in_bind' in H3.
-    + eapply IHc; eauto.
-    + intro y; destruct (e y); constructor; auto.
+      * eapply IHc; eauto.
+      * intro y; destruct (e y); constructor; auto.
+    + inversion Hfree.
   - inversion Hc; subst.
     destruct (e x); inversion Hfree; reflexivity.
 Qed.
@@ -265,12 +272,14 @@ Proof.
     destruct (runState (compile c1) (S n')) eqn:Hc1_1.
     inversion H2; subst; clear H2.
     unfold compose in Hbound.
-    inversion Hbound; subst.
-    + eapply compile_not_in; eauto.
-      apply compile_bound_n_m in Hc1_1; lia.
-    + apply bound_in_bind' in H5.
-      eapply IHc1; eauto.
-      intro z. destruct (e z); constructor; auto.
+    destruct (e x).
+    + inversion Hbound; subst.
+      * eapply compile_not_in; eauto.
+        apply compile_bound_n_m in Hc1_1; lia.
+      * apply bound_in_bind' in H5.
+        eapply IHc1; eauto.
+        intro z. destruct (e z); constructor; auto.
+    + inversion Hbound.
   - inversion H0; subst.
     destruct (e x); inversion Hbound.
 Qed.
@@ -323,24 +332,26 @@ Proof.
     specialize (IHc (S m) H0).
     destruct (runState (compile c) (S m)) eqn:Hc.
     simpl in *.
-    constructor.
-    + apply wf_tree'_bind; auto.
-      * intros; destruct (e x); inversion H1.
-      * intros. destruct (e x); inversion H1; subst.
-        (* This is true because we generate the labels in the correct
-           order in the compiler. *)
+    destruct (e st).
+    + constructor.
+      * apply wf_tree'_bind; auto.
+        ++ intros; destruct (e x); inversion H1.
+        ++ intros. destruct (e x); inversion H1; subst.
+           (* This is true because we generate the labels in the
+              correct order in the compiler. *)           
+           eapply compile_bound_labels in Hc; eauto; lia.
+        ++ intro x; destruct (e x); constructor.
+      * intros l Hbound.
+        apply bound_in_bind in Hbound. destruct Hbound as [Hbound|Hbound].
         eapply compile_bound_labels in Hc; eauto; lia.
-      * intro x; destruct (e x); constructor.
-    + intros l Hbound.
-      apply bound_in_bind in Hbound. destruct Hbound as [Hbound|Hbound].
-      eapply compile_bound_labels in Hc; eauto; lia.
-      destruct Hbound as [x Hbound]; destruct (e x); inversion Hbound.
-    + intros l Hfree.
-      apply free_in_bind in Hfree.
-      destruct Hfree as [Hfree|Hfree].
-      * eapply compile_free_in_0 in Hc; eauto; lia.
-      * destruct Hfree as [x Hfree].
-        destruct (e x); inversion Hfree; subst; lia.
+        destruct Hbound as [x Hbound]; destruct (e x); inversion Hbound.
+      * intros l Hfree.
+        apply free_in_bind in Hfree.
+        destruct Hfree as [Hfree|Hfree].
+        ++ eapply compile_free_in_0 in Hc; eauto; lia.
+        ++ destruct Hfree as [x Hfree].
+           destruct (e x); inversion Hfree; subst; lia.
+    + constructor.
   - destruct (e st); constructor.
 Qed.
 
