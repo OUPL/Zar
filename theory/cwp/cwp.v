@@ -18,6 +18,13 @@ Require Import Q.
 Open Scope cpGCL_scope.
 Open Scope Q_scope.
 
+(** Note on the relational versions of wp and wlp: we make them
+  explicitly "proper" wrt extensional equivalence of arguments. This
+  is necessary (or at least useful) because equivalence of standard
+  library rational numbers doesn't coincide with Coq's definitional
+  equality in general, so rational equivalence lifted pointwise to
+  functions must be handled explicitly (can't use functional
+  extensionality axiom). *)
 
 (** Relational specification of weakest pre-expectation semantics *)
 Inductive wp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
@@ -50,7 +57,6 @@ Inductive wp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
 | wp_observe : forall e f f',
     f' ==f (fun st => if e st : bool then f st else 0) ->
     wp (CObserve e) f f'.
-
 
 (** Relational specification of weakest liberal pre-expectation
     semantics *)
@@ -93,6 +99,11 @@ Definition cwp_ (c : cpGCL) (f f' g g' : St -> Q) :=
 Definition cwp (c : cpGCL) (f f'' : St -> Q) :=
   exists f' g', cwp_ c f f' (const 1) g' /\ f'' ==f fun st => f' st / g' st.
 
+
+(** As observed by Olmedo et al. in Lemma 7.4 (page 39), wp and wlp
+  for loops can be computed directly as a ratio whenever the loops are
+  iid. This leads to the following functional specifications of wp and
+  wlp. *)
 
 (** Functional specification of weakest pre-expectation semantics
     (only valid for iid programs). *)
@@ -147,18 +158,22 @@ Definition indicator (e : exp) (st : St) : Q :=
 Definition neg_indicator (e : exp) (st : St) : Q :=
   if e st then 0 else 1.
 
+(** [unroll e c i] is the ith finite unrolling of the loop with guard
+  condition [e] and body [c]. *)
 Fixpoint unroll (e : exp) (c : cpGCL) (i : nat) : cpGCL :=
   match i with
   | O => CAbort
   | S i' => CIte e (CSeq c (unroll e c i')) CSkip
   end.
 
+(** iid condition for functional wp*)
 Definition iid_wpf (e : exp) (c : cpGCL) :=
   forall f st n,
     wpf (unroll e c (S n)) f st =
     wpf c (indicator e) st * wpf (unroll e c n) f st +
     wpf c (fun x => if e x then 0 else f x) st.
 
+(** iid condition for functional wlp*)
 Definition iid_wlpf (e : exp) (c : cpGCL) :=
   forall f st n,
     wlpf (unroll e c (S n)) f st =
@@ -170,7 +185,7 @@ Definition iid_wlpf (e : exp) (c : cpGCL) :=
 Definition iid (e : exp) (c : cpGCL) :=
   iid_wpf e c /\ iid_wlpf e c.
 
-(** Predicate expressing that all loops in a program are iid. *)
+(** Predicate asserting that all loops in a program are iid. *)
 Inductive iid_cpGCL : cpGCL -> Prop :=
 | iid_skip : iid_cpGCL CSkip
 | iid_abort : iid_cpGCL CAbort
@@ -192,7 +207,8 @@ Inductive iid_cpGCL : cpGCL -> Prop :=
     iid_cpGCL (CObserve e).
 
 
-(** Using CWP on example programs *)
+(** A couple tactics that are useful for reasoning about example
+  programs using wp and wlp. *)
 
 Ltac rewrite_equiv :=
   match goal with
@@ -212,6 +228,9 @@ Ltac wlp_inversion :=
   end;
   repeat rewrite_equiv.
 
+
+(** wp is proper wrt extensional equivalence of its function
+  arguments. *)
 Instance Proper_wp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) wp.
 Proof.
   unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst; split; intro Hwp.
@@ -269,6 +288,8 @@ Proof.
       destruct (e x); symmetry; auto; reflexivity.
 Qed.
 
+(** wlp is proper wrt extensional equivalence of its function
+  arguments. *)
 Instance Proper_wlp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) wlp.
 Proof.
   unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst; split; intro Hwlp.
@@ -326,6 +347,8 @@ Proof.
       destruct (e x); symmetry; auto; reflexivity.
 Qed.
 
+(** cwp is proper wrt extensional equivalence of its function
+  arguments. *)
 Instance Proper_cwp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) cwp.
 Proof.
   unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst.
@@ -345,6 +368,8 @@ Proof.
     + intro x; rewrite Heq'; auto.
 Qed.
 
+(** wpf is proper wrt extensional equivalence of its function
+  arguments. *)
 Instance Proper_wpf : Proper (eq ==> f_Qeq ==> f_Qeq) wpf.
 Proof.
   intros c1 c2 Heq; subst.
@@ -366,6 +391,8 @@ Proof.
   - destruct (e st); auto; reflexivity.
 Qed.
 
+(** wlpf is proper wrt extensional equivalence of its function
+  arguments. *)
 Instance Proper_wlpf : Proper (eq ==> f_Qeq ==> f_Qeq) wlpf.
 Proof.
   intros c1 c2 Heq; subst.

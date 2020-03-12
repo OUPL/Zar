@@ -1,4 +1,4 @@
-(** Compiling commands to trees and some associated lemmas. *)
+(** Compiling commands to trees. *)
 
 Set Implicit Arguments.
 Require Import Coq.Program.Basics.
@@ -9,6 +9,16 @@ Require Import Coq.micromega.Lia.
 
 Require Import cpGCL.
 Require Import tree.
+
+(** Commands are compiled to functions of type [St -> tree St] (kleisli
+    arrows wrt the tree monad at type St), representing conditional
+    distributions over program states (conditioned on an input state).
+
+    [compile] is a state monad computation with integer state (the
+    gensym counter) for generating fresh labels at Fix
+    nodes. Compilation is mostly straightforward, but in the CWhile
+    case we make sure to generate labels in the right order so that
+    the resulting trees will be well-formed wrt [wf_tree'].  *)
 
 Definition freshLabel : state nat nat :=
   bind get (fun l => bind (put (S l)) (fun _ => ret (S l))).
@@ -54,6 +64,7 @@ Definition evalCompile (c : cpGCL) (n : nat) : St -> tree St :=
 Definition evalCompile' (c : cpGCL) : St -> tree St :=
   evalCompile c O.
 
+(** The gensym counter is not decreased by [compile]. *)
 Lemma compile_bound_n_m (c : cpGCL) (n m : nat) (k : St -> tree St) :
   runState (compile c) n = (k, m) ->
   (n <= m)%nat.
@@ -84,6 +95,9 @@ Proof.
     apply IHc in Hc1; lia.
 Qed.
 
+(** Any labels bound in the result of [compile] are strictly greater
+    than the initial gensym state and no more than the final gensym
+    state.*)
 Lemma compile_bound_labels (c : cpGCL) (n m : nat) (k : St -> tree St) :
   runState (compile c) n = (k, m) ->
   forall l st, bound_in l (k st) -> n < l <= m.
@@ -130,46 +144,17 @@ Proof.
   - destruct (e st); inversion Hbound.
 Qed.
 
+(** A corollary of [compile_bound_labels]. *)
 Lemma compile_bound_in_0_lt (c : cpGCL) (n n' m : nat) (k : St -> tree St) (x : St) :
   runState (compile c) n = (k, n') ->
   bound_in m (k x) ->
   (0 < m)%nat.
 Proof.
-  revert n n' m k x.
-  induction c; intros n' n'' m k x Hc Hbound; simpl in Hc; inversion Hc; subst.
-  - inversion Hbound.
-  - inversion Hbound; subst. lia. inversion H3.
-  - inversion Hbound.
-  - destruct (runState (compile c1) n') eqn:Hc1.
-    destruct (runState (compile c2) n) eqn:Hc2.
-    inversion Hc; subst; clear Hc H0.
-    apply bound_in_bind in Hbound. destruct Hbound.
-    + eapply IHc1; eauto.
-    + destruct H; eapply IHc2; eauto.
-  - destruct (runState (compile c1) n') eqn:Hc1.
-    destruct (runState (compile c2) n) eqn:Hc2.
-    inversion Hc; subst; clear Hc H0.
-    destruct (e x).
-    + eapply IHc1; eauto.
-    + eapply IHc2; eauto.
-  - destruct (runState (compile c1) n') eqn:Hc1.
-    destruct (runState (compile c2) n) eqn:Hc2.
-    inversion Hc; subst; clear Hc H0.
-    inversion Hbound; subst.
-    + eapply IHc1; eauto.
-    + eapply IHc2; eauto.
-  - destruct (runState (compile c) (S n')) eqn:Hc1.
-    inversion Hc; subst; clear Hc H0.
-    destruct (e x).
-    + inversion Hbound; subst.
-      * lia.
-      * apply bound_in_bind' in H3.
-        ++ eapply IHc; eauto.
-        ++ intro y; destruct (e y); constructor; auto.
-    + inversion Hbound.
-  - destruct (e x); inversion Hbound.
+  intros Hc Hbound; eapply compile_bound_labels in Hc; eauto; lia.
 Qed.
 
+(** Any free labels in the result of [compile] are equal to zero
+    (resulting from failed observations). *)
 Lemma compile_free_in_0 (c : cpGCL) (n n' m : nat) (k : St -> tree St) (x : St) :
   runState (compile c) n = (k, n') ->
   free_in m (k x) ->
@@ -213,6 +198,8 @@ Proof.
     destruct (e x); inversion Hfree; reflexivity.
 Qed.
 
+(** Any nonzero label less than the initial gensym state does not
+    appear bound or free in the result of [compile]. *)
 Lemma compile_not_in (c : cpGCL) (n n' m : nat) (k : St -> tree St) :
   runState (compile c) n = (k, n') ->
   (S m <= n)%nat ->
@@ -225,12 +212,13 @@ Proof.
   + eapply compile_bound_labels in H; eauto. lia.
 Qed.
 
+(** Given two commands that are compiled in sequence, any label bound
+    in the first do not appear in the second. *)
 Lemma compile_bound_in_not_in (c1 c2 : cpGCL) (n n' m m' : nat) (k1 : St -> tree St) (k2 : St -> tree St) :
   runState (compile c1) n = (k1, n') ->
   runState (compile c2) m = (k2, m') ->
   (n' <= m)%nat ->
-  forall n0 x y, bound_in n0 (k1 x) ->
-            not_in n0 (k2 y).
+  forall n0 x y, bound_in n0 (k1 x) -> not_in n0 (k2 y).
 Proof.
   revert k1 k2 c2 n n' m m'.
   induction c1; intros k1 k2 c2 n' n'' m m' H0 H1 Hle n0 x y Hbound.
@@ -284,6 +272,7 @@ Proof.
     destruct (e x); inversion Hbound.
 Qed.
 
+(** Well-formed commands compile to well-formed trees. *)
 Lemma compile_wf' (c : cpGCL) (n : nat) :
   wf_cpGCL c ->
   (forall st, wf_tree' (evalCompile c n st)).
@@ -355,19 +344,14 @@ Proof.
   - destruct (e st); constructor.
 Qed.
 
+(** Well-formed commands compile to well-formed (weaker notion)
+    trees. *)
 Lemma compile_wf (c : cpGCL) (n : nat) :
   wf_cpGCL c ->
   (forall st, wf_tree (evalCompile c n st)).
 Proof. intros; apply wf_tree'_wf_tree, compile_wf'; auto. Qed.
 
-(* Lemma afsddd e c m : *)
-(*   exists l, forall st, exists t, evalCompile (CWhile e c) m st = Fix l t. *)
-(* Proof. *)
-(*   unfold evalCompile. simpl. unfold evalState. simpl. *)
-(*   destruct (runState (compile c) (S m)). simpl. *)
-(*   eexists. intro. eexists. reflexivity. *)
-(* Qed. *)
-
+(** Restating / corollary of [compile_wf']. *)
 Lemma compile_wf_tree' c m n k st :
   wf_cpGCL c ->
   runState (compile c) m = (k, n) ->

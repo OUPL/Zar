@@ -16,7 +16,9 @@ Require Import order.
 Require Import Q.
 Require Import tree.
 
-Lemma wpf_infer_f c f n :
+(** wpf and unnormalized inference after compilation coincide when c
+  is well-formed. *)
+Theorem wpf_infer_f c f n :
   wf_cpGCL c ->
   wpf c f ==f infer_f f ∘ evalCompile c n.
 Proof.
@@ -89,7 +91,9 @@ Proof.
   - destruct (e st); reflexivity.
 Qed.
 
-Lemma wlpf_infer_f_lib c f n :
+(** wlpf and unnormalized liberal inference after compilation coincide
+  when c is well-formed. *)
+Theorem wlpf_infer_f_lib c f n :
   wf_cpGCL c ->
   wlpf c f ==f infer_f_lib f ∘ evalCompile c n.
 Proof.
@@ -167,7 +171,9 @@ Proof.
   - destruct (e st); reflexivity.
 Qed.
 
-Lemma cwpf_infer c f n :
+(** cwpf and normalized inference after compilation coincide when c is
+  well-formed. *)
+Theorem cwpf_infer c f n :
   wf_cpGCL c ->
   cwpf c f ==f infer f ∘ evalCompile c n.
 Proof.

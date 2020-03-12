@@ -19,7 +19,9 @@ Require Import order.
 Require Import Q.
 Require Import tree.
 
-Lemma wp_infer (c : cpGCL) (f f' : St -> Q) (n : nat) :
+(** Unnormalized inference after compilation computes the weakest
+  pre-expectation according to [wp]. *)
+Lemma wp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->
   expectation f ->
@@ -31,7 +33,9 @@ Proof.
   apply wp_wpf; auto.
 Qed.
 
-Lemma wlp_infer (c : cpGCL) (f f' : St -> Q) (n : nat) :
+(** Unnormalized liberal inference after compilation computes the
+  weakest liberal pre-expectation according to [wlp]. *)
+Lemma wlp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->
   bounded_expectation f ->
@@ -43,23 +47,13 @@ Proof.
   apply wlp_wlpf; auto.
 Qed.
 
-(* Theorem cwp_infer (c : cpGCL) (f f' : St -> Q) (n : nat) : *)
-(*   wf_cpGCL c -> *)
-(*   iid_cpGCL c -> *)
-(*   expectation f -> *)
-(*   cwp c f (infer f ∘ evalCompile c n). *)
-(* Proof. *)
-(*   intros Hwf Hiid Hexp. *)
-(*   eapply Proper_cwp. reflexivity. reflexivity. *)
-(*   intro; symmetry; apply cwpf_infer; auto. *)
-(*   apply cwp_cwpf; auto. *)
-(* Qed. *)
-
-Theorem cwp_infer (c : cpGCL) (f f' : St -> Q) :
+(** Normalized inference after compilation computes the conditional
+  weakest pre-expectation according to [cwp]. *)
+Theorem cwp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->
   expectation f ->
-  cwp c f (infer f ∘ evalCompile' c).
+  cwp c f (infer f ∘ evalCompile c n).
 Proof.
   intros Hwf Hiid Hexp.
   eapply Proper_cwp. reflexivity. reflexivity.

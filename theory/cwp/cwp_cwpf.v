@@ -66,6 +66,7 @@ Proof.
   intro x; destruct (e x); lra.
 Qed.
 
+(** wpf preserves constant zero. *)
 Lemma wpf_strict c f x :
   f ==f const 0 ->
   wpf c f x == 0.
@@ -82,6 +83,8 @@ Proof.
   - destruct (e x); auto; reflexivity.
 Qed.
 
+(** [wpf c f] is bounded by 1 whenever f is. I think this is true more
+  generally for any upper bound. *)
 Lemma wpf_bounded c f :
   wf_cpGCL c ->
   (forall x, f x <= 1) ->
@@ -120,6 +123,7 @@ Proof.
   - destruct (e x); auto; lra.
 Qed.
 
+(** Similar to [wpf_linear] but decomposes into wpf and wlpf. *)
 Lemma wlpf_linear c f g st :
   wlpf c (fun st => f st + g st) st == wpf c f st + wlpf c g st.
 Proof.
@@ -158,6 +162,7 @@ Proof.
   intro x; destruct (e x); lra.
 Qed.
 
+(** Similar to [wpf_bounded]. *)
 Lemma wlpf_bounded c f :
   wf_cpGCL c ->
   (forall x, f x <= 1) ->
@@ -197,6 +202,7 @@ Proof.
   - destruct (e x); auto; lra.
 Qed.
 
+(** [wpf c [e]] and [wpf c [~e]] sum to at most 1. *)
 Lemma wpf_disjoint_le_1 c (e : exp) st :
   wf_cpGCL c ->
   wpf c (fun x => if e x then 1 else 0) st +
@@ -213,6 +219,7 @@ Proof.
   intro y; destruct (e y); auto; unfold const; lra.
 Qed.
 
+(** [wpf c [e]] and [wlpf c [~e]] sum to at most 1. *)
 Lemma wlpf_disjoint_le_1 c (e : exp) st :
   wf_cpGCL c ->
   wpf c (fun x => if e x then 1 else 0) st +
@@ -229,6 +236,8 @@ Proof.
   intro y; destruct (e y); auto; unfold const; lra.
 Qed.
 
+(** Given that f is a valid expectation (bounded below by 0), so is
+  [wpf c f].*)
 Lemma wpf_expectation c f :
   wf_cpGCL c ->
   expectation f ->
@@ -257,6 +266,7 @@ Proof.
   - intro x; destruct (e x); auto; lra.
 Qed.
 
+(** Similar to [wpf_expectation]. *)
 Lemma wlpf_expectation c f :
   wf_cpGCL c ->
   expectation f ->
@@ -286,6 +296,7 @@ Proof.
   - intro x; destruct (e x); auto; lra.
 Qed.
 
+(** Putting [wlpf_bounded] and [wlpf_expectation] together. *)
 Lemma wlpf_bounded_expectation c f :
   wf_cpGCL c ->
   bounded_expectation f ->
@@ -298,20 +309,25 @@ Proof.
     intro y; apply Hf.
 Qed.
 
+(** Given that a loop is iid, its sequence of unrollings yields a
+  geometric series progression for any f. *)
 Lemma wpf_chain_geometric_series f e c st i :
   iid_wpf e c ->
   wpf (unroll e c i) f st ==
-  geometric_series'' (wpf c (fun x => if e x then 0 else f x) st)
-                     (wpf c (indicator e) st) i.
+  geometric_series (wpf c (fun x => if e x then 0 else f x) st)
+                   (wpf c (indicator e) st) i.
 Proof.
   intro Hiid; induction i.
   - reflexivity.
   - rewrite Hiid.
     rewrite IHi.
     rewrite Qplus_comm.
-    apply geometric_series''_succ.
+    apply geometric_series_succ.
 Qed.
 
+(** Similar to [wpf_chain_geometric_series], but wrt a geometric
+  series modified with an additional term which makes the series
+  actually decreasing. *)
 Lemma wlpf_chain_series f e c st i :
   iid_wlpf e c ->
   wlpf (unroll e c i) f st ==
@@ -321,7 +337,7 @@ Proof.
   unfold wlpf_series; intro Hiid; induction i.
   - reflexivity.
   - rewrite Hiid, IHi, Qplus_comm; simpl.
-    rewrite Qmult_plus_distr_r, Qplus_assoc, geometric_series''_succ.
+    rewrite Qmult_plus_distr_r, Qplus_assoc, geometric_series_succ.
     reflexivity.
 Qed.
 
@@ -330,6 +346,8 @@ Lemma wf_unroll c e i :
   wf_cpGCL (unroll e c i).
 Proof. induction i; repeat constructor; auto. Qed.
 
+(** wpf is monotone. That is, [∀ f g, f <= g -> wpf c f <= wpf c g] for
+  any command c. *)
 Lemma wpf_monotone c :
   wf_cpGCL c ->
   monotone (wpf c).
@@ -361,6 +379,7 @@ Proof.
   - destruct (e x); auto; lra.
 Qed.
 
+(** Similar to [wlpf_monotone]. *)
 Lemma wlpf_monotone c :
   wf_cpGCL c ->
   monotone (wlpf c).
@@ -395,27 +414,33 @@ Proof.
   - destruct (e x); auto; lra.
 Qed.
 
-Lemma asdkdf c (e : exp) st :
-  wf_cpGCL c ->
-  wpf c (fun x => if e x then 1 else 0) st == 1 ->
-  wpf c (fun x => if e x then 0 else 1) st == 0.
-Proof.
-  unfold indicator.
-  set (a := wpf c (fun st : St => if e st then 1 else 0) st).
-  set (b := wpf c (fun st : St => if e st then 0 else 1) st).
-  intros Hwf Heq.
-  cut (a + b <= 1).
-  { intros.
-    assert (0 <= a).
-    { apply wpf_expectation; auto.
-      intro y; destruct (e y); lra. }
-    assert (0 <= b).
-    { apply wpf_expectation; auto.
-      intro y; destruct (e y); auto; lra. }
-    lra. }
-  apply wpf_disjoint_le_1; auto.
-Qed.
+(** A corollary of [wlpf_disjoint_le_1] that isn't being used at the
+  moment. *)
+(* Lemma wpf_indicator_1_0 c (e : exp) st : *)
+(*   wf_cpGCL c -> *)
+(*   wpf c (fun x => if e x then 1 else 0) st == 1 -> *)
+(*   wpf c (fun x => if e x then 0 else 1) st == 0. *)
+(* Proof. *)
+(*   unfold indicator. *)
+(*   set (a := wpf c (fun st : St => if e st then 1 else 0) st). *)
+(*   set (b := wpf c (fun st : St => if e st then 0 else 1) st). *)
+(*   intros Hwf Heq. *)
+(*   cut (a + b <= 1). *)
+(*   { intros. *)
+(*     assert (0 <= a). *)
+(*     { apply wpf_expectation; auto. *)
+(*       intro y; destruct (e y); lra. } *)
+(*     assert (0 <= b). *)
+(*     { apply wpf_expectation; auto. *)
+(*       intro y; destruct (e y); auto; lra. } *)
+(*     lra. } *)
+(*   apply wpf_disjoint_le_1; auto. *)
+(* Qed. *)
 
+(** It was unclear how to prove this directly so we make use of tree
+  compilation. We perform all reasoning on the trees the commands
+  compile to, and then reflect the result back to wpf via
+  [wpf_infer_f]. *)
 Lemma wpf_indicator_1_f_0 c (e : exp) f st :
   wf_cpGCL c ->
   wpf c (fun x => if e x then 1 else 0) st == 1 ->
@@ -449,6 +474,7 @@ Proof.
          destruct (e y); inversion Hbound.
 Qed.
 
+(** Similar to [wpf_indicator_1_f_0]. *)
 Lemma wlpf_indicator_1_f_0 c (e : exp) f st :
   wf_cpGCL c ->
   wpf c (fun x => if e x then 1 else 0) st == 1 ->
@@ -482,6 +508,11 @@ Proof.
          destruct (e y); inversion Hbound.
 Qed.
 
+(** The statement of the conclusion here is slightly unnatural but
+  convenient for us. This lemma essentially says that whenever a loop
+  body is divergent (either the guard condition is always true or the
+  body diverges in some other way), every finite unrolling will yield
+  zero expectation regardless of the input expectation f. *)
 Lemma wpf_unroll_const_0 c e x i f :
   wf_cpGCL c ->
   iid_wpf e c ->
@@ -498,6 +529,8 @@ Proof.
     apply wpf_indicator_1_f_0; auto.
 Qed.
 
+(** Similar to [wpf_unroll_const_0] but wlpf yields the constant 1
+  expectation because that's how it treats the abort command. *)
 Lemma wlpf_unroll_const_1 c e x i f :
   wf_cpGCL c ->
   iid_wlpf e c ->
@@ -512,6 +545,8 @@ Proof.
     rewrite Heq. rewrite wlpf_indicator_1_f_0; auto; reflexivity.
 Qed.
 
+(** wpf mapped over the sequence of finite unrollings is an ascending
+  chain. *)
 Lemma wpf_unroll_chain c e f x :
   wf_cpGCL c ->
   expectation f ->
@@ -528,6 +563,8 @@ Proof.
     apply wpf_monotone; auto.
 Qed.
 
+(** wlpf mapped over the sequence of finite unrollings is a descending
+  chain. *)
 Lemma wlpf_unroll_dec_chain c e f x :
   wf_cpGCL c ->
   bounded_expectation f ->
@@ -586,7 +623,7 @@ Proof.
            destruct H5; apply wpf_unroll_const_0; auto.
            apply const_supremum.
            intro i; unfold const. apply Qeq_equ; reflexivity.
-        ++ apply geometric''_supremum.
+        ++ apply geometric_supremum.
            ** apply wpf_expectation; auto.
               intro y; destruct (e y); auto; lra.
            ** apply wpf_expectation; auto.
@@ -674,6 +711,7 @@ Proof.
               rewrite He; reflexivity.
 Qed.
 
+(** cwp and cwpf coincide when every loop in the program is iid. *)
 Theorem cwp_cwpf (c : cpGCL) (f : St -> Q) :
   wf_cpGCL c ->
   iid_cpGCL c ->
