@@ -312,14 +312,16 @@ Qed.
 (** Given that a loop is iid, its sequence of unrollings yields a
   geometric series progression for any f. *)
 Lemma wpf_chain_geometric_series f e c st i :
+  e st = true ->
   iid_wpf e c ->
   wpf (unroll e c i) f st ==
   geometric_series (wpf c (fun x => if e x then 0 else f x) st)
                    (wpf c (indicator e) st) i.
 Proof.
-  intro Hiid; induction i.
-  - reflexivity.
-  - rewrite Hiid.
+  intros He Hiid; induction i.
+  - simpl; rewrite He; reflexivity.
+  - unfold iid_wpf in Hiid.
+    rewrite Hiid; auto.
     rewrite IHi.
     rewrite Qplus_comm.
     apply geometric_series_succ.
@@ -329,14 +331,16 @@ Qed.
   series modified with an additional term which makes the series
   actually decreasing. *)
 Lemma wlpf_chain_series f e c st i :
+  e st = true ->
   iid_wlpf e c ->
   wlpf (unroll e c i) f st ==
   wlpf_series (wlpf c (fun x => if e x then 0 else f x) st)
               (wpf c (indicator e) st) i.
 Proof.
-  unfold wlpf_series; intro Hiid; induction i.
-  - reflexivity.
-  - rewrite Hiid, IHi, Qplus_comm; simpl.
+  unfold wlpf_series; intros He Hiid; induction i.
+  - simpl; rewrite He; reflexivity.
+  - unfold iid_wlpf in Hiid.
+    rewrite Hiid, IHi, Qplus_comm; auto; simpl.
     rewrite Qmult_plus_distr_r, Qplus_assoc, geometric_series_succ.
     reflexivity.
 Qed.
@@ -514,6 +518,7 @@ Qed.
   body diverges in some other way), every finite unrolling will yield
   zero expectation regardless of the input expectation f. *)
 Lemma wpf_unroll_const_0 c e x i f :
+  e x = true ->
   wf_cpGCL c ->
   iid_wpf e c ->
   expectation f ->
@@ -521,28 +526,30 @@ Lemma wpf_unroll_const_0 c e x i f :
   wpf (unroll e c i) f x == (const 0) i.
 Proof.
   revert c e x f; unfold indicator.
-  induction i; intros c e x f Hwf Hiid Hexp Heq; unfold compose, const.
-  - reflexivity.
-  - rewrite Hiid.
-    rewrite IHi; auto.
-    unfold const. rewrite Qmult_0_r, Qplus_0_l.
+  induction i; intros c e x f He Hwf Hiid Hexp Heq; unfold compose, const.
+  - simpl; rewrite He; reflexivity.
+  - unfold iid_wpf in Hiid.
+    rewrite Hiid, IHi; auto.
+    unfold const; rewrite Qmult_0_r, Qplus_0_l.
     apply wpf_indicator_1_f_0; auto.
 Qed.
 
 (** Similar to [wpf_unroll_const_0] but wlpf yields the constant 1
   expectation because that's how it treats the abort command. *)
 Lemma wlpf_unroll_const_1 c e x i f :
+  e x = true ->
   wf_cpGCL c ->
   iid_wlpf e c ->
   wpf c (indicator e) x == 1 ->
   wlpf (unroll e c i) f x == (const 1) i.
 Proof.
   revert c e x f; unfold indicator.
-  induction i; intros c e x f Hwf Hiid Heq; unfold compose, const.
-  - reflexivity.
-  - rewrite Hiid. rewrite IHi; auto.
-    unfold const. rewrite Qmult_1_r.
-    rewrite Heq. rewrite wlpf_indicator_1_f_0; auto; reflexivity.
+  induction i; intros c e x f He Hwf Hiid Heq; unfold compose, const.
+  - simpl; rewrite He; reflexivity.
+  - unfold iid_wlpf in Hiid.
+    rewrite Hiid, IHi; auto.
+    unfold const; rewrite Qmult_1_r.
+    rewrite Heq, wlpf_indicator_1_f_0; auto; reflexivity.
 Qed.
 
 (** wpf mapped over the sequence of finite unrollings is an ascending
@@ -557,8 +564,8 @@ Proof.
   - unfold const, compose.
     destruct (e x).
     + apply wpf_expectation; auto.
-      intro y; lra.
-    + apply Hexp.
+      intro y. destruct (e y); auto; lra.
+    + lra.
   - destruct (e x); try lra.
     apply wpf_monotone; auto.
 Qed.
@@ -574,8 +581,8 @@ Proof.
   induction i; intro x; simpl.
   - unfold const, compose.
     destruct (e x).
-    + apply wlpf_bounded; auto; intros; lra.
-    + apply Hexp.
+    + apply wlpf_bounded; auto; intro y; destruct (e y); try lra; apply Hexp.
+    + lra.
   - destruct (e x); try lra.
     unfold compose in *.
     apply wlpf_monotone; auto.

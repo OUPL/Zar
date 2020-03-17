@@ -49,7 +49,7 @@ Inductive wp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
     f' ==f (fun st => p * g st + (1-p) * h st) ->
     wp (CChoice p c1 c2) f f'
 | wp_while : forall e body f f' ch,
-    ch O = const 0 ->
+    ch O ==f (fun st => if e st : bool then const 0 st else f st) ->
     (forall n, exists g, wp body (ch n) g /\
                ch (S n) ==f fun st => if e st : bool then g st else f st) ->
     supremum f' ch ->
@@ -82,7 +82,7 @@ Inductive wlp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
     f' ==f (fun st => p * g st + (1-p) * h st) ->
     wlp (CChoice p c1 c2) f f'
 | wlp_while : forall e body f f' ch,
-    ch O = const 1 ->
+    ch O ==f (fun st => if e st : bool then const 1 st else f st) ->
     (forall n, exists g, wlp body (ch n) g /\
                ch (S n) ==f fun st => if e st : bool then g st else f st) ->
     infimum f' ch ->
@@ -162,21 +162,23 @@ Definition neg_indicator (e : exp) (st : St) : Q :=
   condition [e] and body [c]. *)
 Fixpoint unroll (e : exp) (c : cpGCL) (i : nat) : cpGCL :=
   match i with
-  | O => CAbort
+  | O => CIte e CAbort CSkip
   | S i' => CIte e (CSeq c (unroll e c i')) CSkip
   end.
 
-(** iid condition for functional wp*)
+(** iid condition for functional wp *)
 Definition iid_wpf (e : exp) (c : cpGCL) :=
   forall f st n,
-    wpf (unroll e c (S n)) f st =
+    e st = true ->
+    wpf (unroll e c (S n)) f st ==
     wpf c (indicator e) st * wpf (unroll e c n) f st +
     wpf c (fun x => if e x then 0 else f x) st.
 
-(** iid condition for functional wlp*)
+(** iid condition for functional wlp *)
 Definition iid_wlpf (e : exp) (c : cpGCL) :=
   forall f st n,
-    wlpf (unroll e c (S n)) f st =
+    e st = true ->
+    wlpf (unroll e c (S n)) f st ==
     wpf c (indicator e) st * wlpf (unroll e c n) f st +
     wlpf c (fun x => if e x then 0 else f x) st.
 
@@ -252,12 +254,13 @@ Proof.
       * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
       * intro x; rewrite <- Heq', H6; reflexivity.
     + econstructor; eauto.
-      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
-      exists g0. split; auto.
-      intro x. rewrite Hg0'.
-      destruct (e x); auto; reflexivity.
-      eapply equ_supremum; eauto.
-      apply f_Qeq_equ; auto.
+      * intro x. rewrite H1. destruct (e x); auto; lra.
+      * intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+        exists g0. split; auto.
+        intro x. rewrite Hg0'.
+        destruct (e x); auto; reflexivity.
+      * eapply equ_supremum; eauto.
+        apply f_Qeq_equ; auto.
     + constructor; intro x; rewrite <- Heq', H0.
       destruct (e x); auto; reflexivity.
   - revert f g Heq f' g' Heq' Hwp.
@@ -278,12 +281,13 @@ Proof.
       * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
       * intro x; rewrite Heq', H6; reflexivity.
     + econstructor; eauto.
-      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
-      exists g0. split; auto.
-      intro x. rewrite Hg0'.
-      destruct (e x); auto. reflexivity. rewrite Heq; reflexivity.
-      eapply equ_supremum; eauto.
-      apply f_Qeq_equ; intro x; symmetry; apply Heq'.
+      * intro x; rewrite H1; destruct (e x); try rewrite Heq; reflexivity.
+      * intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+        exists g0. split; auto.
+        intro x. rewrite Hg0'.
+        destruct (e x); auto. reflexivity. rewrite Heq; reflexivity.
+      * eapply equ_supremum; eauto.
+        apply f_Qeq_equ; intro x; symmetry; apply Heq'.
     + constructor; intro x; rewrite  Heq', H0.
       destruct (e x); symmetry; auto; reflexivity.
 Qed.
@@ -311,12 +315,13 @@ Proof.
       * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
       * intro x; rewrite <- Heq', H6; reflexivity.
     + econstructor; eauto.
-      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
-      exists g0. split; auto.
-      intro x. rewrite Hg0'.
-      destruct (e x); auto; reflexivity.
-      eapply equ_infimum; eauto.
-      apply f_Qeq_equ; auto.
+      * intro x; rewrite H1; destruct (e x); auto; reflexivity.
+      * intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+        exists g0. split; auto.
+        intro x. rewrite Hg0'.
+        destruct (e x); auto; reflexivity.
+      * eapply equ_infimum; eauto.
+        apply f_Qeq_equ; auto.
     + constructor; intro x; rewrite <- Heq', H0.
       destruct (e x); auto; reflexivity.
   - revert f g Heq f' g' Heq' Hwlp.
@@ -337,12 +342,13 @@ Proof.
       * eapply IHc2. auto. apply (f_Qeq_refl h). auto.
       * intro x; rewrite Heq', H6; reflexivity.
     + econstructor; eauto.
-      intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
-      exists g0. split; auto.
-      intro x. rewrite Hg0'.
-      destruct (e x); auto. reflexivity. rewrite Heq; reflexivity.
-      eapply equ_infimum; eauto.
-      apply f_Qeq_equ; intro x; symmetry; apply Heq'.
+      * intro x; rewrite H1; destruct (e x); try rewrite Heq; reflexivity.
+      * intro n. specialize (H2 n). destruct H2 as [g0 [Hg0 Hg0']].
+        exists g0. split; auto.
+        intro x. rewrite Hg0'.
+        destruct (e x); auto. reflexivity. rewrite Heq; reflexivity.
+      * eapply equ_infimum; eauto.
+        apply f_Qeq_equ; intro x; symmetry; apply Heq'.
     + constructor; intro x; rewrite  Heq', H0.
       destruct (e x); symmetry; auto; reflexivity.
 Qed.
@@ -418,4 +424,148 @@ Proof.
     intros; simpl; destruct (e x). reflexivity.
     rewrite Hqeq; reflexivity.
   - destruct (e st); auto; reflexivity.
+Qed.
+
+(** wp preserves const 0. *)
+Lemma wp_strict c :
+  wp c (const 0) (const 0).
+Proof.
+  induction c; try (constructor; reflexivity).
+  - econstructor; eauto; reflexivity.
+  - econstructor; eauto; intro x; destruct (e x); reflexivity.
+  - econstructor; eauto; unfold const; intro; lra.
+  - apply wp_while with (ch := const (const 0)).
+    + intro x; destruct (e x); reflexivity.
+    + intro i; exists (const 0).
+      unfold const; split; auto.
+      intro x; destruct (e x); reflexivity.
+    + apply const_supremum; reflexivity.
+  - constructor; intro x; destruct (e x); reflexivity.
+Qed.
+
+(** wlp preserves const 1. *)
+Lemma wlp_strict c :
+  no_obs c ->
+  wlp c (const 1) (const 1).
+Proof.
+  induction c; intros Hno_obs;
+    try (constructor; reflexivity); inversion Hno_obs; subst.
+  - econstructor; eauto; reflexivity.
+  - econstructor; eauto; intro x; destruct (e x); reflexivity.
+  - econstructor; eauto; unfold const; intro; lra.
+  - apply wlp_while with (ch := const (const 1)).
+    + intro x; destruct (e x); reflexivity.
+    + intro i; exists (const 1).
+      unfold const; split; auto.
+      intro x; destruct (e x); reflexivity.
+    + apply const_infimum; reflexivity.
+Qed.
+
+(** wp is deterministic up to extensional equivalence. *)
+Lemma wp_deterministic c f g g' :
+  wp c f g ->
+  wp c f g' ->
+  g ==f g'.
+Proof.
+  revert f g g'.
+  induction c; simpl; intros f g g' Hwlp1 Hwlp2;
+    inversion Hwlp1; inversion Hwlp2; subst.
+  - intros; rewrite <- H; auto.
+  - intros; rewrite H, H0; reflexivity.
+  - intros; rewrite H3, H8; reflexivity.
+  - assert (g0 ==f g1).
+    { eapply IHc2; eauto. }
+    intros; rewrite H5, H12. eapply IHc1; eauto.
+    eapply Proper_wp. reflexivity.
+    intro y. apply H. reflexivity.
+    auto.
+  - intros; rewrite H6, H14.
+    destruct (e x).
+    + eapply IHc1; eauto.
+    + eapply IHc2; eauto.
+  - intros; rewrite H6, H14.
+    assert (Hg: g0 ==f g1).
+    { eapply IHc1; eauto. }
+    assert (Hh: h ==f h0).
+    { eapply IHc2; eauto. }
+    rewrite Hg, Hh; reflexivity.
+  - apply f_Qeq_equ.
+    eapply supremum_unique; eauto.
+    assert (equ ch ch0).
+    { apply chain_equ.
+      intro i. apply f_Qeq_equ.
+      induction i; intro x.
+      - rewrite H1, H8; reflexivity.
+      - destruct (H2 i) as [h [Hwlp1' Hch1]].
+        destruct (H9 i) as [h' [Hwlp2' Hch2]].
+        rewrite Hch1, Hch2.
+        destruct (e x); try reflexivity.
+        eapply IHc; eauto.
+        eapply Proper_wp. reflexivity.
+        intro y. apply IHi. reflexivity.
+        auto. }
+    eapply Proper_supremum. reflexivity. eauto. auto.
+  - intros x; rewrite H0, H4; destruct (e x); reflexivity.
+Qed.
+
+(** wlp is deterministic up to extensional equivalence. *)
+Lemma wlp_deterministic c f g g' :
+  wlp c f g ->
+  wlp c f g' ->
+  g ==f g'.
+Proof.
+  revert f g g'.
+  induction c; simpl; intros f g g' Hwlp1 Hwlp2;
+    inversion Hwlp1; inversion Hwlp2; subst.
+  - intros; rewrite <- H; auto.
+  - intros; rewrite H, H0; reflexivity.
+  - intros; rewrite H3, H8; reflexivity.
+  - assert (g0 ==f g1).
+    { eapply IHc2; eauto. }
+    intros; rewrite H5, H12. eapply IHc1; eauto.
+    eapply Proper_wlp. reflexivity.
+    intro y. apply H. reflexivity.
+    auto.
+  - intros; rewrite H6, H14.
+    destruct (e x).
+    + eapply IHc1; eauto.
+    + eapply IHc2; eauto.
+  - intros; rewrite H6, H14.
+    assert (Hg: g0 ==f g1).
+    { eapply IHc1; eauto. }
+    assert (Hh: h ==f h0).
+    { eapply IHc2; eauto. }
+    rewrite Hg, Hh; reflexivity.
+  - apply f_Qeq_equ.
+    eapply infimum_unique; eauto.
+    assert (equ ch ch0).
+    { apply chain_equ.
+      intro i. apply f_Qeq_equ.
+      induction i; intro x.
+      - rewrite H1, H8; reflexivity.
+      - destruct (H2 i) as [h [Hwlp1' Hch1]].
+        destruct (H9 i) as [h' [Hwlp2' Hch2]].
+        rewrite Hch1, Hch2.
+        destruct (e x); try reflexivity.
+        eapply IHc; eauto.
+        eapply Proper_wlp. reflexivity.
+        intro y. apply IHi. reflexivity.
+        auto. }
+    eapply Proper_infimum. reflexivity. eauto. auto.
+  - intros x; rewrite H0, H4; destruct (e x); reflexivity.
+Qed.
+
+(** cwp is deterministic up to extensional equivalence. *)
+Lemma cwp_deterministic c f g g' :
+  cwp c f g ->
+  cwp c f g' ->
+  g ==f g'.
+Proof.
+  unfold cwp.
+  intros (n & m & [Hwp Hwlp] & Hg) (n' & m' & [Hwp' Hwlp'] & Hg') x.
+  rewrite Hg, Hg'.
+  rewrite wp_deterministic; eauto.
+  cut (m x == m' x).
+  { intros; rewrite H; reflexivity. }
+  eapply wlp_deterministic; eauto.
 Qed.

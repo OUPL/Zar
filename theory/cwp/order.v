@@ -449,6 +449,28 @@ Proof.
     + intros z Hle; rewrite Heq1; apply Hlub; intro w; rewrite <- Heq2; auto.
 Qed.
 
+Instance Proper_infimum {A B : Type} {oB : OType B}
+  : Proper (equ ==> equ ==> iff) (@infimum A B oB).
+Proof.
+  intros x y Hequ f g Hequ'.
+  split; intro Hinf.
+  - admit.
+  - admit.
+Admitted.
+
+Instance Proper_supremum {A B : Type} {oB : OType B}
+  : Proper (equ ==> equ ==> iff) (@supremum A B oB).
+Proof.
+  intros x y Hequ f g Hequ'.
+  split; intro Hinf.
+  - admit.
+  - admit.
+Admitted.
+
+Lemma chain_equ {A : Type} `{OType A} (f g : nat -> A) :
+  equ f g <-> forall i, equ (f i) (g i).
+Proof. split; intros H0; try intro; split; simpl; apply H0. Qed.
+
 Lemma Proper_infimum_Q : Proper (Qeq ==> @f_Qeq nat ==> iff) infimum.
 Proof.
   unfold f_Qeq. intros x y Heq1 f g Heq2.

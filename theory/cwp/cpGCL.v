@@ -53,3 +53,22 @@ Definition expectation {A : Type} (f : A -> Q) := forall x, 0 <= f x.
 
 (** f is a bounded expectation (bounded above by 1). *)
 Definition bounded_expectation {A : Type} (f : A -> Q) := forall x, 0 <= f x <= 1.
+
+(** Predicate asserting that a command contains no observe
+  commands. *)
+Inductive no_obs : cpGCL -> Prop :=
+| no_obs_skip : no_obs CSkip
+| no_obs_abort : no_obs CAbort
+| no_obs_assign : forall x e, no_obs (CAssign x e)
+| no_obs_seq : forall c1 c2,
+    no_obs c1 -> no_obs c2 ->
+    no_obs (CSeq c1 c2)
+| no_obs_ite : forall e c1 c2,
+    no_obs c1 -> no_obs c2 ->
+    no_obs (CIte e c1 c2)
+| no_obs_choice : forall p c1 c2,
+    no_obs c1 -> no_obs c2 ->
+    no_obs (CChoice p c1 c2)
+| no_obs_while : forall e c,
+    no_obs c ->
+    no_obs (CWhile e c).

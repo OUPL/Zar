@@ -4,12 +4,20 @@
 Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import Coq.QArith.QArith.
+Require Import Coq.micromega.Lqa.
+Require Import FunctionalExtensionality.
+Local Open Scope program_scope.
 
 Require Import compile.
 Require Import cpGCL.
 Require Import cwp.
+Require Import cwp_cwpf.
+Require Import geometric.
 Require Import infer.
+Require Import order.
+Require Import Q.
 Require Import tree.
+Local Open Scope Q_scope.
 
 (** Testing compilation and inference on example programs *)
 
@@ -126,3 +134,252 @@ Example ex20 : infer ex19_f fair_coin_loop_tree ==
                cwpf fair_coin_loop ex19_f empty.
 Proof. reflexivity. Qed.
 
+
+(* Lemma goldfish_piranha_cwp (f : St -> Q) : *)
+(*   cwp goldfish_piranha (fun st => if st O then 1 else 0) f -> f ==f const (2#3). *)
+(* Proof. *)
+(*   intros (f' & g' & [Hwp Hwlp] & Hf) x. *)
+(*   repeat wp_inversion; repeat wlp_inversion; reflexivity. *)
+(* Qed. *)
+
+(* Ltac rewrite_equiv := *)
+(*   match goal with *)
+(*   | [ H : forall _ : St, _ == _ |- _ ] => rewrite H; simpl *)
+(*   end. *)
+
+(** Proving iid-ness of loops and using cwpf to help automate cwp
+  reasoning. *)
+
+Lemma simple_loop_iid :
+  iid_wpf (const true) (CAssign O (const true)).
+Proof.
+  intros f x i. simpl.
+  unfold compose, const, indicator. rewrite Qmult_1_l, Qplus_0_r.
+  revert x.
+  induction i; intro x. simpl. unfold const. reflexivity.
+  simpl in *.
+  (* rewrite IHi. *)
+  unfold compose. 
+  rewrite IHi; reflexivity.
+Qed.
+
+(** Some properties of upd (requiring funext) *)
+
+Lemma upd_shadow n x y st :
+  upd n x (upd n y st) = upd n x st.
+Proof.
+  apply functional_extensionality.
+  intro i; unfold upd; simpl.
+  destruct (Nat.eqb_spec i n); subst; reflexivity.
+Qed.
+
+Lemma upd_eq n st :
+  upd n (st n) st = st.
+Proof.
+  apply functional_extensionality.
+  intro i; unfold upd; destruct (Nat.eqb_spec i n); subst; auto.
+Qed.
+
+Lemma upd_comm n m x y st :
+  n <> m ->
+  upd n x (upd m y st) = upd m y (upd n x st).
+Proof.
+  intro Hneq.
+  unfold upd.
+  apply functional_extensionality; intro i.
+  destruct (Nat.eqb_spec i n); subst.
+  - destruct (Nat.eqb_spec n m); subst; congruence.
+  - destruct (Nat.eqb_spec i m); subst; congruence.
+Qed.
+
+Lemma simple_loop2_iid :
+  iid_wpf (fun st => st O) (CChoice (1#2) (CAssign O (const true)) (CAssign O (const false))).
+Proof.
+  intros f x i. simpl. unfold compose, const, indicator. simpl.
+  intro Hx. rewrite Hx.
+  field_simplify_eq.
+  cut (wpf
+         (unroll (fun st : St => st O)
+                 (CChoice (1 # 2) (CAssign 0 (fun _ : St => true))
+                          (CAssign 0 (fun _ : St => false))) i) f
+         (upd 0 true x) ==
+       wpf
+         (unroll (fun st : St => st O)
+                 (CChoice (1 # 2) (CAssign 0 (fun _ : St => true))
+                          (CAssign 0 (fun _ : St => false))) i) f x).
+  { intros H. rewrite H. clear H.
+    cut (wpf
+           (unroll (fun st : St => st O)
+                   (CChoice (1 # 2) (CAssign 0 (fun _ : St => true))
+                            (CAssign 0 (fun _ : St => false))) i) f
+           (upd 0 false x) ==
+         f (upd 0 false x)).
+    { lra. }
+    destruct i; reflexivity. }
+  revert Hx. revert x.
+  induction i; intros x Hx; simpl.
+  + rewrite Hx. reflexivity.
+  + rewrite Hx. unfold compose. simpl.
+    field_simplify_eq.
+    rewrite IHi; auto.
+    rewrite IHi; auto.
+    rewrite upd_shadow. reflexivity.
+Qed.
+
+Lemma wpf_unroll_false e c i f st :
+  e st = false ->
+  wpf (unroll e c i) f st == f st.
+Proof. intro He; destruct i; simpl; rewrite He; reflexivity. Qed.
+
+Lemma wlpf_unroll_false e c i f st :
+  e st = false ->
+  wlpf (unroll e c i) f st == f st.
+Proof. intro He; destruct i; simpl; rewrite He; reflexivity. Qed.
+
+Lemma upd_1_0_shadow st x y z w :
+  upd 1 x (upd 0 y (upd 1 z (upd 0 w st))) =
+  upd 1 x (upd 0 y st).
+Proof. repeat (rewrite upd_comm; auto; rewrite upd_shadow). Qed.
+
+Lemma iid_wpf_fair_coin :
+  iid_wpf (fun st : St => eqb (st O) (st (S O))) (sample 0 (1 # 3);; sample 1 (1 # 3)).
+Proof.
+  intros f x i. simpl.
+  unfold compose, const, indicator; simpl.
+  intro Hx. rewrite Hx.
+  field_simplify_eq.
+  rewrite wpf_unroll_false with (st := upd 1 false (upd 0 true x)); auto.
+  rewrite wpf_unroll_false with (st := upd 1 true (upd 0 false x)); auto.
+  cut (wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                   (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+           (upd 1 true (upd 0 true x)) ==
+       wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                   (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+  { intro H; rewrite H; clear H.
+    cut (wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                     (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+             (upd 1 false (upd 0 false x)) ==
+         wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                     (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+    { lra. }
+    revert x Hx.
+    induction i; intros x Hx; simpl.
+    - rewrite Hx; reflexivity.
+    - rewrite Hx. unfold compose, const.
+      field_simplify_eq.
+      rewrite !IHi; auto.
+      rewrite !upd_1_0_shadow; lra. }
+  revert x Hx.
+  induction i; intros x Hx; simpl.
+  - rewrite Hx; reflexivity.
+  - rewrite Hx. unfold compose, const.
+    field_simplify_eq.
+    rewrite !IHi; auto.
+    rewrite !upd_1_0_shadow; lra.
+Qed.
+
+Lemma iid_wlpf_fair_coin :
+  iid_wlpf (fun st : St => eqb (st O) (st (S O))) (sample 0 (1 # 3);; sample 1 (1 # 3)).
+Proof.
+  intros f x i. simpl.
+  unfold compose, const, indicator; simpl.
+  intro Hx. rewrite Hx.
+  field_simplify_eq.
+  rewrite wlpf_unroll_false with (st := upd 1 false (upd 0 true x)); auto.
+  rewrite wlpf_unroll_false with (st := upd 1 true (upd 0 false x)); auto.
+  cut (wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                    (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+            (upd 1 true (upd 0 true x)) ==
+       wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                    (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+  { intro H; rewrite H; clear H.
+    cut (wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                      (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+              (upd 1 false (upd 0 false x)) ==
+         wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
+                      (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+    { lra. }
+    revert x Hx.
+    induction i; intros x Hx; simpl.
+    - rewrite Hx; reflexivity.
+    - rewrite Hx. unfold compose, const.
+      field_simplify_eq.
+      rewrite !IHi; auto.
+      rewrite !upd_1_0_shadow; lra. }
+  revert x Hx.
+  induction i; intros x Hx; simpl.
+  - rewrite Hx; reflexivity.
+  - rewrite Hx. unfold compose, const.
+    field_simplify_eq.
+    rewrite !IHi; auto.
+    rewrite !upd_1_0_shadow; lra.
+Qed.
+
+Lemma wf_fair_coin : wf_cpGCL fair_coin.
+Proof. repeat constructor; lra. Qed.
+
+Lemma iid_fair_coin : iid_cpGCL fair_coin.
+Proof.
+  repeat constructor.
+  - apply iid_wpf_fair_coin.
+  - apply iid_wlpf_fair_coin.
+Qed.
+
+Lemma fair_coin_cwp (f : St -> Q) :
+  cwp fair_coin (fun st => if st O then 1 else 0) f -> f ==f const (1#2).
+Proof.
+  intros Hcwp x.
+  transitivity (cwpf fair_coin (fun st => if st O then 1 else 0) x).
+  - eapply cwp_deterministic; eauto.
+    apply cwp_cwpf; auto.
+    + apply wf_fair_coin.
+    + apply iid_fair_coin.
+    + intro y; destruct (y O); lra.
+  - compute. (* :O *)
+    reflexivity.
+Qed.
+
+Lemma fair_coin_cwp' (f : St -> Q) :
+  expectation f ->
+  cwp fair_coin f (cwpf fair_coin f).
+Proof.
+  intro Hexp; apply cwp_cwpf; auto.
+  - apply wf_fair_coin.
+  - apply iid_fair_coin.
+Qed.
+
+Lemma fair_coin_cwp'' :
+  cwp fair_coin (fun st => if st O then 1 else 0)
+      (cwpf fair_coin (fun st => if st O then 1 else 0)).
+Proof.
+  apply fair_coin_cwp'.
+  intro x; destruct (x O); lra.
+Qed.
+
+Eval compute in Qred ∘ cwpf fair_coin (fun st => if st O then 1 else 0).
+
+Definition fair_coin_noinit : cpGCL :=
+  CWhile (fun st => eqb (st 0%nat) (st 1%nat))
+         (sample 0%nat (1#3) ;; sample 1%nat (1#3)).
+
+Lemma fair_coin_noinit_cwp' (f : St -> Q) :
+  expectation f ->
+  cwp fair_coin_noinit f (cwpf fair_coin_noinit f).
+Proof.
+  intro Hexp; apply cwp_cwpf; auto.
+  - repeat constructor; lra.
+  - repeat constructor.
+    + apply iid_wpf_fair_coin.
+    + apply iid_wlpf_fair_coin.
+Qed.
+
+Lemma fair_coin_noinit_cwp'' :
+  cwp fair_coin_noinit (fun st => if st O then 1 else 0)
+      (cwpf fair_coin_noinit (fun st => if st O then 1 else 0)).
+Proof.
+  apply fair_coin_noinit_cwp'.
+  intro x; destruct (x O); lra.
+Qed.
+
+Eval compute in Qred (cwpf fair_coin_noinit (fun st => if st O then 1 else 0)
+                           (upd O true (upd (S O) true empty))).
