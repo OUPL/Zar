@@ -27,7 +27,7 @@ Record prog :=
   { prog_com : cpGCL
   ; prog_query : exp }.
 
-Notation "a ';;' b" := (CSeq a b) (at level 100, right associativity) : cpGCL_scope.
+Notation "a ';;;' b" := (CSeq a b) (at level 100, right associativity) : cpGCL_scope.
 Open Scope cpGCL_scope.
 
 (** A cpGCL command is well-formed when all p values in choice
@@ -51,8 +51,11 @@ Inductive wf_cpGCL : cpGCL -> Prop :=
 (** f is an expectation. *)
 Definition expectation {A : Type} (f : A -> Q) := forall x, 0 <= f x.
 
+Definition bounded {A : Type} (f : A -> Q) (b : Q) := forall x, f x <= b.
+
 (** f is a bounded expectation (bounded above by 1). *)
-Definition bounded_expectation {A : Type} (f : A -> Q) := forall x, 0 <= f x <= 1.
+Definition bounded_expectation {A : Type} (f : A -> Q) (b : Q) :=
+  forall x, 0 <= f x <= b.
 
 (** Predicate asserting that a command contains no observe
   commands. *)

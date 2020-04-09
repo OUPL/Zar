@@ -110,6 +110,21 @@ Proof.
     + right; intro HC; inversion HC; subst; congruence.
 Qed.
 
+Instance Reflexive_tree_eq {A : Type} `{EqType A} : Reflexive (@tree_eq A).
+Proof. intro t; induction t; constructor; auto; reflexivity. Qed.
+
+Instance Symmetric_tree_eq {A : Type} `{EqType A} : Symmetric (@tree_eq A).
+Proof. induction 1; constructor; auto; lra. Qed.
+
+(* Instance Transitive_tree_eq {A : Type} `{EqType A} : Transitive (@tree_eq A). *)
+
+Lemma tree_eqb_refl {A : Type} `{EqType A} (t : tree A) :
+  tree_eqb t t = true.
+Proof.
+  destruct (tree_eqb_spec t t); auto.
+  exfalso; apply n; reflexivity.
+Qed.
+
 Inductive tree_leq {A : Type} : tree A -> tree A -> Prop :=
 | tree_leq_leaf : forall x, tree_leq (Leaf x) (Leaf x)
 | tree_leq_fail : forall l t, tree_leq (Fail _ l) t
@@ -527,38 +542,38 @@ Proof.
   apply H2 in HC; lia.
 Qed.
 
-Inductive all_support {A : Type} (pred : A -> Prop) : tree A -> Prop :=
-| all_support_leaf : forall x, pred x -> all_support pred (Leaf x)
-| all_support_fail : forall n, all_support pred (Fail _ n)
-| all_support_choice1 : forall p t1 t2,
-    p == 0 ->
-    all_support pred t2 ->
-    all_support pred (Choice p t1 t2)
-| all_support_choice2 : forall p t1 t2,
-    p == 1 ->
-    all_support pred t1 ->
-    all_support pred (Choice p t1 t2)
-| all_support_choice3 : forall p t1 t2,
-    0 < p -> p < 1 ->
-    all_support pred t1 ->
-    all_support pred t2 ->
-    all_support pred (Choice p t1 t2)
-| all_support_fix : forall l t,
-    all_support pred t ->
-    all_support pred (Fix l t).
+(* Inductive all_support {A : Type} (pred : A -> Prop) : tree A -> Prop := *)
+(* | all_support_leaf : forall x, pred x -> all_support pred (Leaf x) *)
+(* | all_support_fail : forall n, all_support pred (Fail _ n) *)
+(* | all_support_choice1 : forall p t1 t2, *)
+(*     p == 0 -> *)
+(*     all_support pred t2 -> *)
+(*     all_support pred (Choice p t1 t2) *)
+(* | all_support_choice2 : forall p t1 t2, *)
+(*     p == 1 -> *)
+(*     all_support pred t1 -> *)
+(*     all_support pred (Choice p t1 t2) *)
+(* | all_support_choice3 : forall p t1 t2, *)
+(*     0 < p -> p < 1 -> *)
+(*     all_support pred t1 -> *)
+(*     all_support pred t2 -> *)
+(*     all_support pred (Choice p t1 t2) *)
+(* | all_support_fix : forall l t, *)
+(*     all_support pred t -> *)
+(*     all_support pred (Fix l t). *)
 
-Fixpoint all_supportb {A : Type} (f : A -> bool) (t : tree A) : bool :=
-  match t with
-  | Leaf x => f x
-  | Fail _ _ => true
-  | Choice p t1 t2 =>
-    if Qeq_bool p 0
-    then all_supportb f t2
-    else if Qeq_bool p 1
-         then all_supportb f t1
-         else all_supportb f t1 && all_supportb f t2
-  | Fix n t1 => all_supportb f t1
-  end.
+(* Fixpoint all_supportb {A : Type} (f : A -> bool) (t : tree A) : bool := *)
+(*   match t with *)
+(*   | Leaf x => f x *)
+(*   | Fail _ _ => true *)
+(*   | Choice p t1 t2 => *)
+(*     if Qeq_bool p 0 *)
+(*     then all_supportb f t2 *)
+(*     else if Qeq_bool p 1 *)
+(*          then all_supportb f t1 *)
+(*          else all_supportb f t1 && all_supportb f t2 *)
+(*   | Fix n t1 => all_supportb f t1 *)
+(*   end. *)
 
 Lemma wf_tree_inv_choice1 {A : Type} p (t1 t2 : tree A) :
   wf_tree (Choice p t1 t2) ->
@@ -570,42 +585,42 @@ Lemma wf_tree_inv_choice2 {A : Type} p (t1 t2 : tree A) :
   wf_tree t2.
 Proof. intro Hwf; inversion Hwf; auto. Qed.
 
-Lemma all_supportb_spec {A : Type} (f : A -> bool) (t : tree A) :
-  wf_tree t ->
-  reflect (all_support (fun x => f x = true) t) (all_supportb f t).
-Proof.
-  induction t; intro Hwf; simpl.
-  - destruct (f a) eqn:Hf; constructor.
-    + constructor; auto.
-    + intro HC; inversion HC; subst; congruence.
-  - repeat constructor.
-  - destruct (Qeq_dec q 0).
-    + rewrite Qeq_eq_bool; auto.
-      destruct IHt2.
-      * eapply wf_tree_inv_choice2; eauto.
-      * repeat constructor; auto.
-      * constructor; intro HC; inversion HC; subst; try congruence; lra.
-    + rewrite Qeq_bool_false; auto.
-      destruct (Qeq_dec q 1).
-      * rewrite Qeq_eq_bool; auto.
-        destruct IHt1.
-        ++ eapply wf_tree_inv_choice1; eauto.
-        ++ constructor; apply all_support_choice2; auto.
-        ++ constructor; intro HC; inversion HC; subst; congruence; try lra.
-      * rewrite Qeq_bool_false; auto.
-        destruct IHt1, IHt2; simpl;
-          try solve [eapply wf_tree_inv_choice1; eauto];
-          try solve [eapply wf_tree_inv_choice2; eauto]; constructor.
-        ++ inversion Hwf; subst.
-           apply all_support_choice3; auto; lra.
-        ++ intro HC; inversion HC; subst; congruence.
-        ++ intro HC; inversion HC; subst; congruence.
-        ++ intro HC; inversion HC; subst; congruence.
-  - destruct IHt.
-    + inversion Hwf; auto.
-    + repeat constructor; auto.
-    + constructor. intro HC; inversion HC; congruence.
-Qed.
+(* Lemma all_supportb_spec {A : Type} (f : A -> bool) (t : tree A) : *)
+(*   wf_tree t -> *)
+(*   reflect (all_support (fun x => f x = true) t) (all_supportb f t). *)
+(* Proof. *)
+(*   induction t; intro Hwf; simpl. *)
+(*   - destruct (f a) eqn:Hf; constructor. *)
+(*     + constructor; auto. *)
+(*     + intro HC; inversion HC; subst; congruence. *)
+(*   - repeat constructor. *)
+(*   - destruct (Qeq_dec q 0). *)
+(*     + rewrite Qeq_eq_bool; auto. *)
+(*       destruct IHt2. *)
+(*       * eapply wf_tree_inv_choice2; eauto. *)
+(*       * repeat constructor; auto. *)
+(*       * constructor; intro HC; inversion HC; subst; try congruence; lra. *)
+(*     + rewrite Qeq_bool_false; auto. *)
+(*       destruct (Qeq_dec q 1). *)
+(*       * rewrite Qeq_eq_bool; auto. *)
+(*         destruct IHt1. *)
+(*         ++ eapply wf_tree_inv_choice1; eauto. *)
+(*         ++ constructor; apply all_support_choice2; auto. *)
+(*         ++ constructor; intro HC; inversion HC; subst; congruence; try lra. *)
+(*       * rewrite Qeq_bool_false; auto. *)
+(*         destruct IHt1, IHt2; simpl; *)
+(*           try solve [eapply wf_tree_inv_choice1; eauto]; *)
+(*           try solve [eapply wf_tree_inv_choice2; eauto]; constructor. *)
+(*         ++ inversion Hwf; subst. *)
+(*            apply all_support_choice3; auto; lra. *)
+(*         ++ intro HC; inversion HC; subst; congruence. *)
+(*         ++ intro HC; inversion HC; subst; congruence. *)
+(*         ++ intro HC; inversion HC; subst; congruence. *)
+(*   - destruct IHt. *)
+(*     + inversion Hwf; auto. *)
+(*     + repeat constructor; auto. *)
+(*     + constructor. intro HC; inversion HC; congruence. *)
+(* Qed. *)
 
 Lemma bound_in_bind {A B : Type} (t : tree A) (k : A -> tree B) (m : nat) :
   bound_in m (bind t k) ->
@@ -910,3 +925,94 @@ Proof.
     apply bound_in_not_bound_in in H2; apply H2.
     apply bound_in_tree_bind; auto.
 Qed.
+
+(** A structural property of a tree that underapproximates the
+  semantic property of nondivergence (it's a bit stronger than
+  necessary). *)
+Inductive nondivergent {A : Type} : tree A -> Prop :=
+| nondivergent_leaf : forall x, nondivergent (Leaf x)
+| nondivergent_choice1 : forall p t1 t2,
+    p == 0 ->
+    nondivergent t2 ->
+    nondivergent (Choice p t1 t2)
+| nondivergent_choice2 : forall p t1 t2,
+    p == 1 ->
+    nondivergent t1 ->
+    nondivergent (Choice p t1 t2)
+| nondivergent_choice3 : forall p t1 t2,
+    0 < p -> p < 1 ->
+    nondivergent t1 \/ nondivergent t2 ->
+    nondivergent (Choice p t1 t2)
+| nondivergent_fix : forall n t,
+    nondivergent t ->
+    nondivergent (Fix n t).
+
+Inductive in_tree {A : Type} : A -> tree A -> Prop :=
+| in_tree_leaf : forall x, in_tree x (Leaf x)
+| in_tree_choice1 : forall x p t1 t2,
+    in_tree x t1 ->
+    in_tree x (Choice p t1 t2)
+| in_tree_choice2 : forall x p t1 t2,
+    in_tree x t2 ->
+    in_tree x (Choice p t1 t2)
+| in_tree_fix : forall x n t,
+    in_tree x t ->
+    in_tree x (Fix n t).
+
+Fixpoint in_treeb {A : Type} `{EqType A} (x : A) (t : tree A) : bool :=
+  match t with
+  | Leaf y => eqb x y
+  | Fail _ _ => false
+  | Choice _ t1 t2 => in_treeb x t1 || in_treeb x t1
+  | Fix _ t1 => in_treeb x t1
+  end.
+
+(* Inductive nondivergent' {A : Type} : list nat -> tree A -> Prop := *)
+(* | nondivergent'_leaf : forall l x, nondivergent' l (Leaf x) *)
+(* | nondivergent'_fail : forall l n, In n l -> nondivergent' l (Fail _ n) *)
+(* | nondivergent'_choice1 : forall l p t1 t2, *)
+(*     p == 0 -> *)
+(*     nondivergent' l t2 -> *)
+(*     nondivergent' l (Choice p t1 t2) *)
+(* | nondivergent'_choice2 : forall l p t1 t2, *)
+(*     p == 1 -> *)
+(*     nondivergent' l t1 -> *)
+(*     nondivergent' l (Choice p t1 t2) *)
+(* | nondivergent'_choice3 : forall l p t1 t2, *)
+(*     0 < p -> p < 1 -> *)
+(*     nondivergent' l t1 -> nondivergent' l t2 -> *)
+(*     nondivergent' l (Choice p t1 t2) *)
+(* | nondivergent'_fix : forall l n t x, *)
+(*     nondivergent' (n :: l) t -> *)
+(*     in_tree x t -> *)
+(*     nondivergent' l (Fix n t). *)
+
+Inductive unbiased {A : Type} : tree A -> Prop :=
+| unbiased_leaf : forall x, unbiased (Leaf x)
+| unbiased_fail : forall n, unbiased (Fail _ n)
+| unbiased_choice : forall p t1 t2,
+    p == (1#2) ->
+    unbiased t1 -> unbiased t2 ->
+    unbiased (Choice p t1 t2)
+| unbiased_fix : forall n t,
+    unbiased t ->
+    unbiased (Fix n t).
+
+Inductive no_fix {A : Type} : tree A -> Prop :=
+| no_fix_leaf : forall x, no_fix (Leaf x)
+| no_fix_fail : forall lbl, no_fix (Fail _ lbl)
+| no_fix_choice : forall p t1 t2,
+    no_fix t1 ->
+    no_fix t2 ->
+    no_fix (Choice p t1 t2).
+
+Inductive no_nested_fix {A : Type} : tree A -> Prop :=
+| no_nested_fix_leaf : forall x, no_nested_fix (Leaf x)
+| no_nested_fix_fail : forall lbl, no_nested_fix (Fail _ lbl)
+| no_nested_fix_choice : forall p t1 t2,
+    no_nested_fix t1 ->
+    no_nested_fix t2 ->
+    no_nested_fix (Choice p t1 t2)
+| no_nested_fix_fix : forall lbl t,
+    no_fix t ->
+    no_nested_fix (Fix lbl t).

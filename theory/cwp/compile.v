@@ -234,7 +234,7 @@ Proof.
     destruct (runState (compile c1_2) n) eqn:Hc1_2.
     inversion H2; subst; clear H2.
     unfold kcomp in Hbound. simpl in Hbound.
-    generalize (@compile_bound_labels (c1_1;;c1_2) n' n'' (kcomp t t0) H0 n0 x Hbound).
+    generalize (@compile_bound_labels (c1_1;;;c1_2) n' n'' (kcomp t t0) H0 n0 x Hbound).
     intros [Hlt Hle'].
     assert (n0 <= m)%nat. lia.
     destruct n0.
@@ -350,6 +350,16 @@ Lemma compile_wf (c : cpGCL) (n : nat) :
   wf_cpGCL c ->
   (forall st, wf_tree (evalCompile c n st)).
 Proof. intros; apply wf_tree'_wf_tree, compile_wf'; auto. Qed.
+
+(** Restating / corollary of [compile_wf]. *)
+Lemma compile_wf_tree c m n k st :
+  wf_cpGCL c ->
+  runState (compile c) m = (k, n) ->
+  wf_tree (k st).
+Proof.
+  intros Hwf Hc; generalize (compile_wf m Hwf st).
+  unfold evalCompile, evalState; rewrite Hc; auto.
+Qed.
 
 (** Restating / corollary of [compile_wf']. *)
 Lemma compile_wf_tree' c m n k st :

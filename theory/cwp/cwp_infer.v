@@ -38,7 +38,7 @@ Qed.
 Lemma wlp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->
-  bounded_expectation f ->
+  bounded_expectation f 1 ->
   wlp c f (infer_f_lib f ∘ evalCompile c n).
 Proof.
   intros Hwf Hiid Hexp.

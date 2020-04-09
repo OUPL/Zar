@@ -299,8 +299,8 @@ Qed.
 (** Putting [wlpf_bounded] and [wlpf_expectation] together. *)
 Lemma wlpf_bounded_expectation c f :
   wf_cpGCL c ->
-  bounded_expectation f ->
-  bounded_expectation (wlpf c f).
+  bounded_expectation f 1 ->
+  bounded_expectation (wlpf c f) 1.
 Proof.
   intros Hwf Hf x; split.
   - apply wlpf_expectation; auto.
@@ -476,6 +476,7 @@ Proof.
       ++ apply bound_in_not_bound_in in Hnotbound; congruence.
       ++ destruct H as [y Hbound].
          destruct (e y); inversion Hbound.
+  + apply wf_tree'_wf_tree; auto.
 Qed.
 
 (** Similar to [wpf_indicator_1_f_0]. *)
@@ -510,6 +511,7 @@ Proof.
       ++ apply bound_in_not_bound_in in Hnotbound; congruence.
       ++ destruct H as [y Hbound].
          destruct (e y); inversion Hbound.
+  + apply wf_tree'_wf_tree; auto.
 Qed.
 
 (** The statement of the conclusion here is slightly unnatural but
@@ -574,7 +576,7 @@ Qed.
   chain. *)
 Lemma wlpf_unroll_dec_chain c e f x :
   wf_cpGCL c ->
-  bounded_expectation f ->
+  bounded_expectation f 1 ->
   dec_chain (fun i => wlpf (unroll e c i) f x).
 Proof.
   intros Hwf Hexp i; simpl; revert x.
@@ -651,7 +653,7 @@ Qed.
 Lemma wlp_wlpf (c : cpGCL) (f : St -> Q) :
   wf_cpGCL c ->
   iid_cpGCL c ->
-  bounded_expectation f ->
+  bounded_expectation f 1 ->
   wlp c f (wlpf c f).
 Proof.
   revert f.

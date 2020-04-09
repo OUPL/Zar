@@ -27,6 +27,9 @@ Instance EqType_nat : EqType nat :=
   {| eqb := Nat.eqb
    ; eqb_spec := Nat.eqb_spec |}.
 
+Lemma eqb_refl {A : Type} `{EqType A} (x : A) :
+  eqb x x = true.
+Proof. destruct (eqb_spec x x); congruence. Qed.
 
 (* Ordered types *)
 Class OType (A : Type) : Type :=
@@ -40,6 +43,15 @@ Proof. destruct o; typeclasses eauto. Qed.
 Instance OType_Transitive A `{o : OType A} : Transitive leq.
 Proof. destruct o; typeclasses eauto. Qed.
 
+(* leq : A -> A -> Prop *)
+
+(* leq x : A -> Prop *)
+
+(** Greater than *)
+Definition gt {A : Type} `{OType A} : relation A := fun x y => not (leq x y).
+
+(* (** Greater than or equal to *) *)
+(* Definition ge {A : Type} `{OType A} : relation A := flip leq. *)
 
 (* Pointed ordered types *)
 Class PType (A : Type) `{o : OType A} : Type :=
@@ -157,11 +169,20 @@ Proof.
     eapply Htrans; eauto.
 Qed.
 
+(* Definition monotone {A B : Type} `{OType A} `{OType B} (f : A -> B) := *)
+(*   forall x y, leq x y -> leq (f x) (f y). *)
+
 Definition monotone {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
-  forall x y, leq x y -> leq (f x) (f y).
+  Proper (leq ==> leq) f.
+(* Lemma monotone_proper {A B : Type} `{OType A} `{OType B} (f : A -> B) : *)
+(*   monotone f <-> Proper (leq ==> leq) f. *)
+(* Proof. intuition. Qed. *)
 
 Definition monotone_decreasing {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
-  forall x y, leq x y -> leq (f y) (f x).
+  Proper (leq ==> flip leq) f.
+
+(* Definition monotone_decreasing {A B : Type} `{OType A} `{OType B} (f : A -> B) := *)
+(*   forall x y, leq x y -> leq (f y) (f x). *)
 
 Lemma monotone_chain {A B : Type} `{OType A} `{OType B} (f : A -> B) (g : nat -> A) :
   monotone f ->

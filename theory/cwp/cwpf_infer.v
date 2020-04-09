@@ -79,7 +79,7 @@ Proof.
         destruct HC as [HC|HC].
         ++ eapply compile_bound_labels in Hc; eauto; lia.
         ++ eapply compile_free_in_0 in Hc; eauto; lia.
-        ++ eapply compile_wf_tree'; eauto.
+        ++ eapply compile_wf_tree; eauto.
       * specialize (IHc' (S m) g H0 st).
         rewrite IHc'. rewrite Hc. simpl.
         unfold g. unfold k.
@@ -159,7 +159,7 @@ Proof.
         destruct HC as [HC|HC].
         ++ eapply compile_bound_labels in Hc; eauto; lia.
         ++ eapply compile_free_in_0 in Hc; eauto; lia.
-        ++ eapply compile_wf_tree'; eauto.
+        ++ eapply compile_wf_tree; eauto.
       * specialize (IHc' (S m) g H0 st).
         rewrite IHc'. rewrite Hc. simpl.
         unfold g. unfold k.

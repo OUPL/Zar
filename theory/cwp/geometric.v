@@ -1,6 +1,7 @@
 (** Geometric series definitions and lemmas. *)
 
 Set Implicit Arguments.
+Require Import Coq.Program.Basics.
 Require Import List.
 Require Import Coq.QArith.QArith.
 Require Import Coq.QArith.Qabs.
@@ -126,7 +127,7 @@ Lemma wlpf_series_monotone_decreasing (a r : Q) :
   monotone_decreasing (wlpf_series a r).
 Proof.
   intros H0 H1 H2 H3 n m Hle.
-  unfold leq in *; simpl in *; unfold Nat.le in Hle.
+  unfold flip, leq in *; simpl in *; unfold Nat.le in Hle.
   induction m.
   - destruct n; try lra; lia.
   - destruct (Nat.eqb_spec n (S m)); subst.

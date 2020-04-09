@@ -294,3 +294,83 @@ Proof.
     apply Qmult_le_compat_r; auto; lra.
   - apply Qle_shift_div_r; lra.
 Qed.
+
+(** Misc lemmas *)
+
+Lemma Q_lem1 a b c d :
+  (a#c) * (b#d) = (a*b#c*d).
+Proof. reflexivity. Qed.
+
+Lemma Q_lem2 a b c :
+  (a#c) + (b#c) == (a+b#c).
+Proof.
+  rewrite 3!Qmake_Qdiv.
+  rewrite inject_Z_plus. field.
+  intros HC; inversion HC.
+Qed.
+
+Lemma Q_lem3 (a b c : nat) :
+  (c <> 0)%nat ->
+  (1 # 2) * (Z.of_nat a # Pos.of_nat c) +
+  (1 # 2) * (Z.of_nat b # Pos.of_nat c) ==
+  Z.of_nat (a + b) # Pos.of_nat (c + c).
+Proof.
+  intro H0.
+  rewrite 2!Q_lem1.
+  rewrite 2!Z.mul_1_l.
+  rewrite Nat2Z.inj_add.
+  assert (H1: (c + c = 2 * c)%nat). lia.
+  rewrite H1. clear H1.
+  rewrite Nat2Pos.inj_mul; auto.
+  apply Q_lem2.
+Qed.
+
+Lemma Q_lem4 (a b c : Q) :
+  0 < b -> 0 < c ->
+  (a / c) / (b / c) == a / b.
+Proof. intros H0 H1; field; split; nra. Qed.
+
+Lemma Qdiv_Qmake (a b : Z) (c d : positive) :
+  (0 < b)%Z ->
+  (a # c) / (b # d) == (a * Zpos d # Z.to_pos b * c).
+Proof.
+  intro Hlt.
+Admitted.
+
+Lemma Q_lem5 (a : Z) (b : nat) (c : positive) :
+  (0 < b)%nat ->
+  (a # c) / (Z.of_nat b # c) == a # Pos.of_nat b.
+Proof.
+  intro H0.
+  rewrite 3!Qmake_Qdiv.
+  rewrite Q_lem4.
+  - cut (inject_Z (Z.of_nat b) == inject_Z (Z.pos (Pos.of_nat b))).
+    { intro H1. rewrite H1. reflexivity. }
+    cut (Z.pos (Pos.of_nat b) = Z.of_nat b).
+    { intro H. rewrite H. reflexivity. }
+    clear c. clear a.
+    assert (H: b = Pos.to_nat (Pos.of_nat b)).
+    { rewrite Nat2Pos.id; lia. }
+    rewrite H at 2.
+    rewrite positive_nat_Z; reflexivity.
+  - assert (H: 0 == inject_Z 0).
+    { reflexivity. }
+    rewrite H, <- Zlt_Qlt; lia.
+  - assert (H: 0 == inject_Z 0).
+    { reflexivity. }
+    rewrite H, <- Zlt_Qlt; lia.
+Qed.
+
+Lemma Q_lem6 a b :
+  1 - (a # b) == Zpos b - a # b.
+Proof.
+Admitted.
+
+(* Lemma Q_lem6 a b : *)
+(*   a == (Qnum a * b # Qden a * b). *)
+
+(* Lemma Q_lem6 (a b : Z) : *)
+(*   a - (b#c) == (a*c # c *)
+
+(* (n' # Pos.of_nat T) / (1 - (Z.of_nat (T - d) # Pos.of_nat T)) == *)
+(*   n' # Pos.of_nat d *)

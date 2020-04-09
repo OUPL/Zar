@@ -19,6 +19,7 @@ Require Import tree.
 
 (** Inference on trees. *)
 
+(** Compute the probability of reaching a fail node with label n. *)
 Fixpoint infer_fail {A : Type} (n : nat) (t : tree A) : Q :=
   match t with
   | Leaf _ => 0
@@ -30,6 +31,7 @@ Fixpoint infer_fail {A : Type} (n : nat) (t : tree A) : Q :=
     a / (1 - b)
   end.
 
+(** Compute the expected value of f. *)
 Fixpoint infer_f {A : Type} (f : A -> Q) (t : tree A) : Q :=
   match t with
   | Leaf x => f x
@@ -41,17 +43,8 @@ Fixpoint infer_f {A : Type} (f : A -> Q) (t : tree A) : Q :=
     a / (1 - b)
   end.
 
-Fixpoint infer_fail_lib {A : Type} (n : nat) (t : tree A) : Q :=
-  match t with
-  | Leaf _ => 0
-  | Fail _ m => if m =? n then 1 else 0
-  | Choice p t1 t2 => p * infer_fail_lib n t1 + (1-p) * infer_fail_lib n t2
-  | Fix m t =>
-    let a := infer_fail_lib n t in
-    let b := infer_fail_lib m t in
-    if Qeq_bool b 1 then 1 else a / (1 - b)
-  end.
-
+(** The same as infer_f except in the case of divergent loops (choose
+  the value 1 instead of 0). *)
 Fixpoint infer_f_lib {A : Type} (f : A -> Q) (t : tree A) : Q :=
   match t with
   | Leaf x => f x
@@ -63,17 +56,8 @@ Fixpoint infer_f_lib {A : Type} (f : A -> Q) (t : tree A) : Q :=
     if Qeq_bool b 1 then 1 else a / (1 - b)
   end.
 
-Fixpoint infer_f_lib' {A : Type} (f : A -> Q) (t : tree A) : Q :=
-  match t with
-  | Leaf x => f x
-  | Fail _ _ => 1
-  | Choice p t1 t2 => p * infer_f_lib' f t1 + (1-p) * infer_f_lib' f t2
-  | Fix m t =>
-    let a := infer_f_lib' f t in
-    let b := infer_fail_lib m t in
-    if Qeq_bool b 1 then 1 else a / (1 - b)
-  end.
-
+(** Compute the expected value of f normalized wrt observation
+  failure. *)
 Definition infer {A : Type} (f : A -> Q) (t : tree A) : Q :=
   let a := infer_f f t in
   let b := infer_f_lib (const 1) t in
@@ -212,6 +196,49 @@ Proof.
   - inversion Hnotin; subst; rewrite IHt; auto; apply Qdiv_0_num.
 Qed.
 
+Lemma not_in_infer_fail_tree_bind {A B : Type} (t : tree A) m (k : A -> tree B) :
+  (forall x, not_in m (k x)) ->
+  (forall n x, bound_in n t -> not_in n (k x)) ->
+  infer_fail m (tree_bind t k) == infer_fail m t.
+Proof.
+  revert m k.
+  induction t; intros m k Hnotin Hnotin'; unfold tree_bind in *; simpl.
+  - apply not_in_infer_fail; auto.
+  - reflexivity.
+  - rewrite IHt1; auto. rewrite IHt2; auto. reflexivity.
+    + intros n x Hbound; apply Hnotin'; solve [constructor; auto].
+    + intros n x Hbound; apply Hnotin'; solve [constructor; auto].
+  - rewrite IHt; auto. rewrite IHt; auto. reflexivity.
+    + intro x; apply Hnotin'; constructor.
+    + intros l x Hbound. apply Hnotin'.
+      destruct (Nat.eqb_spec l n); subst; constructor; auto.
+    + intros l x Hbound. apply Hnotin'.
+      destruct (Nat.eqb_spec l n); subst; constructor; auto.
+Qed.
+
+Lemma infer_fail_bind {A B : Type} (lbl : nat) (t : tree A) (k : A -> tree B) :
+  not_in lbl t ->
+  (forall n x, bound_in n t -> not_in n (k x)) ->
+  infer_f (infer_fail lbl ∘ k) t == infer_fail lbl (tree_bind t k).
+Proof.
+  revert lbl k.
+  induction t; simpl; intros lbl k Hnotin Hbound; inversion Hnotin; subst.
+  - reflexivity.
+  - apply Nat.eqb_neq in H1.
+    rewrite Nat.eqb_sym, H1; reflexivity.
+  - rewrite IHt1, IHt2; auto; try reflexivity;
+      intros n x Hboundin; apply Hbound; solve [constructor; auto].
+  - rewrite IHt; auto.
+    + assert (H: infer_fail n (tree_bind t k) == infer_fail n t).
+      { apply not_in_infer_fail_tree_bind.
+        - intro x; apply Hbound; constructor.
+        - intros m x Hboundin; apply Hbound.
+          destruct (Nat.eqb_spec m n); subst; constructor; auto. }
+      rewrite H; reflexivity.
+    + intros m x Hboundin; apply Hbound.
+      destruct (Nat.eqb_spec m n); subst; constructor; auto.
+Qed.
+
 Lemma infer_f_bind {A B : Type} (f : B -> Q) (t : tree A) (k : A -> tree B) :
   (forall n x, bound_in n t -> not_in n (k x)) ->
   infer_f (infer_f f ∘ k) t == infer_f f (tree_bind t k).
@@ -242,26 +269,6 @@ Proof.
         constructor.
         constructor; auto.
         destruct (Nat.eqb_spec m' n); subst. constructor. constructor; auto.
-Qed.
-
-Lemma not_in_infer_fail_tree_bind {A B : Type} (t : tree A) m (k : A -> tree B) :
-  (forall x, not_in m (k x)) ->
-  (forall n x, bound_in n t -> not_in n (k x)) ->
-  infer_fail m (tree_bind t k) == infer_fail m t.
-Proof.
-  revert m k.
-  induction t; intros m k Hnotin Hnotin'; unfold tree_bind in *; simpl.
-  - apply not_in_infer_fail; auto.
-  - reflexivity.
-  - rewrite IHt1; auto. rewrite IHt2; auto. reflexivity.
-    + intros n x Hbound; apply Hnotin'; solve [constructor; auto].
-    + intros n x Hbound; apply Hnotin'; solve [constructor; auto].
-  - rewrite IHt; auto. rewrite IHt; auto. reflexivity.
-    + intro x; apply Hnotin'; constructor.
-    + intros l x Hbound. apply Hnotin'.
-      destruct (Nat.eqb_spec l n); subst; constructor; auto.
-    + intros l x Hbound. apply Hnotin'.
-      destruct (Nat.eqb_spec l n); subst; constructor; auto.
 Qed.
 
 Lemma infer_f_lib_bind_lem1 {A B : Type} n (t : tree A) (k : A -> tree B) :
@@ -531,7 +538,7 @@ Qed.
 
 Lemma infer_fail_tree_bind_infer_f e t m :
   not_in m t ->
-  wf_tree' t ->
+  wf_tree t ->
   infer_fail m (tree_bind t (fun st => if e st : bool then Fail St m else Leaf st)) ==
   infer_f (fun st => if e st then 1 else 0) t.
 Proof.
@@ -622,25 +629,25 @@ Lemma infer_f_lib_proper {A : Type} (t : tree A) (f g : A -> Q) :
   infer_f_lib f t == infer_f_lib g t.
 Proof. intros; apply Proper_infer_f_lib; auto. Qed.
 
-Lemma all_support_true_infer_f (e : St -> bool) (f g : St -> Q) (t : tree St) :
-  wf_tree t ->
-  all_support (fun x => e x = true) t ->
-  infer_f (fun x => if e x then f x else g x) t ==
-  infer_f f t.
-Proof.
-  induction t; intros Hwf Hsupp; inversion Hwf; subst; simpl.
-  - inversion Hsupp; subst. rewrite H0; reflexivity.
-  - reflexivity.
-  - inversion Hsupp; subst.
-    + rewrite H1, 2!Qmult_0_l, 2!Qplus_0_l, Qminus_0_r, 2!Qmult_1_l.
-      apply IHt2; auto.
-    + rewrite H1, Qmult_1_l, Qminus_cancel,
-      2!Qmult_0_l, Qmult_1_l, 2!Qplus_0_r.
-      apply IHt1; auto.
-    + rewrite IHt1, IHt2; auto; reflexivity.
-  - inversion Hsupp; subst.
-    rewrite IHt; auto; reflexivity.
-Qed.
+(* Lemma all_support_true_infer_f (e : St -> bool) (f g : St -> Q) (t : tree St) : *)
+(*   wf_tree t -> *)
+(*   all_support (fun x => e x = true) t -> *)
+(*   infer_f (fun x => if e x then f x else g x) t == *)
+(*   infer_f f t. *)
+(* Proof. *)
+(*   induction t; intros Hwf Hsupp; inversion Hwf; subst; simpl. *)
+(*   - inversion Hsupp; subst. rewrite H0; reflexivity. *)
+(*   - reflexivity. *)
+(*   - inversion Hsupp; subst. *)
+(*     + rewrite H1, 2!Qmult_0_l, 2!Qplus_0_l, Qminus_0_r, 2!Qmult_1_l. *)
+(*       apply IHt2; auto. *)
+(*     + rewrite H1, Qmult_1_l, Qminus_cancel, *)
+(*       2!Qmult_0_l, Qmult_1_l, 2!Qplus_0_r. *)
+(*       apply IHt1; auto. *)
+(*     + rewrite IHt1, IHt2; auto; reflexivity. *)
+(*   - inversion Hsupp; subst. *)
+(*     rewrite IHt; auto; reflexivity. *)
+(* Qed. *)
 
 Lemma infer_f_bind_fail_f_neg (e : exp) t f n :
   not_bound_in n t ->
@@ -680,3 +687,196 @@ Proof.
       rewrite IHt; auto.
       rewrite Heq; reflexivity.
 Qed.
+
+(* Instance monotone_infer_f {A : Type} (f : A -> Q) (Hexp : expectation f) *)
+(*   : Proper (tree_leq ==> Qle) (infer_f f). *)
+(* Proof. *)
+(*   intros t1 t2 Hleq. *)
+(*   induction Hleq; simpl. *)
+(*   - lra. *)
+(*   - apply infer_f_expectation_0_le; auto. *)
+
+(* Lemma monotone_infer_f {A : Type} (f : A -> Q) (t1 t2 : tree A) : *)
+(*   wf_tree t1 -> wf_tree t2 -> *)
+(*   expectation f -> *)
+(*   tree_leq t1 t2 -> *)
+(*   infer_f f t1 <= infer_f f t2. *)
+(* Proof. *)
+(*   intros Hwf1 Hwf2 Hexp Hleq. *)
+(*   induction Hleq; simpl. *)
+(*   - lra. *)
+(*   - apply infer_f_expectation_0_le; auto. *)
+(*   - inversion Hwf1; inversion Hwf2; subst. *)
+(*     specialize (IHHleq1 H4 H10). *)
+(*     specialize (IHHleq2 H5 H11). *)
+(*     rewrite H; nra. *)
+(*   - inversion Hwf1; inversion Hwf2; subst. *)
+(*     specialize (IHHleq H1 H5). *)
+
+(* Lemma nondivergent_infer_fail_lt_1 {A : Type} (n : nat) (t : tree A) : *)
+(*   nondivergent t -> *)
+(*   wf_tree t -> *)
+(*   infer_fail n t < 1. *)
+(* Proof. *)
+(*   intros Hnd. induction Hnd; intro Hwf; simpl; inversion Hwf; subst. *)
+(*   - lra. *)
+(*   - rewrite H; apply IHHnd in H5; lra. *)
+(*   - rewrite H; apply IHHnd in H4; lra. *)
+(*   - apply IHHnd1 in H5; apply IHHnd2 in H6; nra. *)
+(*   - assert (infer_fail n0 t <= 1). *)
+(*     { apply infer_fail_le_1; auto. } *)
+
+(* Lemma nondivergent'_infer_fail_sum_lt_1 {A : Type} (t : tree A) *)
+(*       (l : list nat) : *)
+(*   (forall m, t <> Fail _ m) -> *)
+(*   nondivergent' l t -> *)
+(*   wf_tree t -> *)
+(*   NoDup l -> *)
+(*   (forall x, In x l -> not_bound_in x t) -> *)
+(*   (* (forall x, bound_in x t -> ~ In x lbls) -> *) *)
+(*   sum_Q_list (map (fun n => infer_fail n t) l) < 1. *)
+(* Proof. *)
+(*   revert l. induction t; intros l Hneq Hnd Hwf Hnodup Hnotbound; simpl. *)
+(*   - induction l; simpl. *)
+(*     + lra. *)
+(*     + inversion Hnodup; subst. *)
+(*       apply IHl in H2. lra. *)
+(*       constructor. *)
+(*       intros; apply Hnotbound; right; auto. *)
+(*   - specialize (Hneq n); congruence. *)
+(*     (* inversion Hnd; subst. *) *)
+(*     (* apply Hnotbound in H1.  *) *)
+(*   - rewrite sum_Q_list_map_plus, 2!sum_Q_list_map_mult_scalar. *)
+(*     inversion Hwf; subst. *)
+(*     inversion Hnd; subst. *)
+(*     + rewrite H5; field_simplify; rewrite 2!Qdiv_1_den. *)
+(*       apply IHt2; auto. *)
+(*       * intros m Heq; subst. *)
+(*         inversion H7; subst. *)
+(*       * intros x Hin. *)
+(*         apply Hnotbound in Hin; inversion Hin; subst; auto. *)
+(*     + rewrite H5; field_simplify; rewrite 2!Qdiv_1_den. *)
+(*       apply IHt1; auto; intros x Hin. *)
+(*       apply Hnotbound in Hin; inversion Hin; subst; auto. *)
+(*     + assert (Ht1: forall x, In x l -> not_bound_in x t1). *)
+(*       { intros x Hin; specialize (Hnotbound x Hin). *)
+(*         inversion Hnotbound; subst; auto. } *)
+(*       assert (Ht2: forall x, In x l -> not_bound_in x t2). *)
+(*       { intros x Hin; specialize (Hnotbound x Hin). *)
+(*         inversion Hnotbound; subst; auto. } *)
+(*       specialize (IHt1 l H8 H3 Hnodup Ht1). *)
+(*       specialize (IHt2 l H9 H4 Hnodup Ht2). *)
+(*       nra. *)
+(*   - inversion Hwf; subst. *)
+(*     inversion Hnd; subst. *)
+(*     assert (~ In n l). *)
+(*     { intro HC. apply Hnotbound in HC. inversion HC; subst. congruence. } *)
+(*     assert (Hlt: sum_Q_list (map (fun n => infer_fail n t) [n]) < 1). *)
+(*     { apply IHt; auto. *)
+(*       - constructor; auto; constructor. *)
+(*       - intros x Hin. inversion Hin; subst; auto. *)
+(*         inversion H3. } *)
+(*     simpl in Hlt. rewrite Qplus_0_r in Hlt. *)
+(*     rewrite sum_Q_list_map_div_scalar; try lra. *)
+(*     apply Qlt_shift_div_r; try lra. *)
+(*     rewrite Qmult_1_l. *)
+(*     assert (Hnodup': NoDup (n :: l)). *)
+(*     { constructor; auto. } *)
+(*     apply IHt in Hnodup'; auto. *)
+(*     + simpl in Hnodup'. lra. *)
+(*     + intros x Hin. inversion Hin; subst; auto. *)
+(*       apply Hnotbound in H3. inversion H3; subst; auto. *)
+(* Qed. *)
+
+Lemma nondivergent_infer_fail_sum_lt_1 {A : Type} (t : tree A) (l : list nat) :
+  nondivergent t ->
+  wf_tree t ->
+  NoDup l ->
+  (forall x, In x l -> not_bound_in x t) ->
+  sum_Q_list (map (fun n => infer_fail n t) l) < 1.
+Proof.
+  revert l. induction t; intros l Hnd Hwf Hnodup Hnotbound; simpl.
+  - induction l; simpl.
+    + lra.
+    + inversion Hnodup; subst.
+      apply IHl in H2. lra.
+      intros; apply Hnotbound; right; auto.
+  - inversion Hnd.
+  - rewrite sum_Q_list_map_plus, 2!sum_Q_list_map_mult_scalar.
+    inversion Hwf; subst.
+    inversion Hnd; subst.
+    + rewrite H1; field_simplify; rewrite 2!Qdiv_1_den.
+      apply IHt2; auto; intros x Hin.
+      apply Hnotbound in Hin; inversion Hin; subst; auto.
+    + rewrite H1; field_simplify; rewrite 2!Qdiv_1_den.
+      apply IHt1; auto; intros x Hin.
+      apply Hnotbound in Hin; inversion Hin; subst; auto.
+    + assert (Ht1: forall x, In x l -> not_bound_in x t1).
+      { intros x Hin; specialize (Hnotbound x Hin).
+        inversion Hnotbound; subst; auto. }
+      assert (Ht2: forall x, In x l -> not_bound_in x t2).
+      { intros x Hin; specialize (Hnotbound x Hin).
+        inversion Hnotbound; subst; auto. }
+      destruct H7 as [H7 | H7].
+      * specialize (IHt1 l H7 H3 Hnodup Ht1).
+        assert (sum_Q_list (map (fun n => infer_fail n t2) l) <= 1).
+        { apply infer_fail_sum_le_1; auto. }
+        nra.
+      * specialize (IHt2 l H7 H4 Hnodup Ht2).
+        assert (sum_Q_list (map (fun n => infer_fail n t1) l) <= 1).
+        { apply infer_fail_sum_le_1; auto. }
+        nra.
+      (* specialize (IHt1 l H7 H3 Hnodup Ht1). *)
+      (* specialize (IHt2 l H8 H4 Hnodup Ht2). *)
+      (* nra. *)
+  - inversion Hwf; subst.
+    inversion Hnd; subst.
+    assert (~ In n l).
+    { intro HC. apply Hnotbound in HC. inversion HC; subst. congruence. }
+    assert (Hlt: sum_Q_list (map (fun n => infer_fail n t) [n]) < 1).
+    { apply IHt; auto.
+      - constructor; auto; constructor.
+      - intros x Hin. inversion Hin; subst; auto.
+        inversion H3. }
+    simpl in Hlt. rewrite Qplus_0_r in Hlt.
+    rewrite sum_Q_list_map_div_scalar; try lra.
+    apply Qlt_shift_div_r; try lra.
+    rewrite Qmult_1_l.
+    assert (Hnodup': NoDup (n :: l)).
+    { constructor; auto. }
+    apply IHt in Hnodup'; auto.
+    + simpl in Hnodup'. lra.
+    + intros x Hin. inversion Hin; subst; auto.
+      apply Hnotbound in H3. inversion H3; subst; auto.
+Qed.
+
+Lemma nondivergent_infer_fail_lt_1 {A : Type} (t : tree A) (n : nat) :
+  nondivergent t ->
+  wf_tree t ->
+  not_bound_in n t ->
+  infer_fail n t < 1.
+Proof.
+  intros Hnd Hwf Hnotbound.
+  assert (Hnodup: NoDup [n]).
+  { constructor; auto; constructor. }
+  assert (H: forall x, In x [n] -> not_bound_in x t).
+  { intros x [Hin | ?]; subst; auto; inversion H. }
+  generalize (nondivergent_infer_fail_sum_lt_1 Hnd Hwf Hnodup H); simpl; lra.
+Qed.
+
+(** Not true after changing nondivergent (choice case 3). *)
+(* Lemma nondivergent_infer_f_infer_f_lib {A : Type} (f : A -> Q) (t : tree A) : *)
+(*   nondivergent t -> *)
+(*   wf_tree t -> *)
+(*   infer_f f t == infer_f_lib f t. *)
+(* Proof. *)
+(*   induction t; intros Hnd Hwf; simpl; try lra. *)
+(*   - inversion Hwf; subst; inversion Hnd; subst. *)
+(*     + rewrite H1, IHt2; auto; lra. *)
+(*     + rewrite H1, IHt1; auto; lra. *)
+(*     + rewrite IHt1, IHt2; auto; lra. *)
+(*   - inversion Hwf; inversion Hnd; subst. *)
+(*     destruct (Qeq_dec (infer_fail n t) 1). *)
+(*     + generalize (@nondivergent_infer_fail_lt_1 _ t n H4 H1 H2); lra. *)
+(*     + rewrite IHt; auto. rewrite Qeq_bool_false; auto; reflexivity. *)
+(* Qed. *)

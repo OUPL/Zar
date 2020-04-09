@@ -25,10 +25,10 @@ Definition sample (x : nat) (p : Q) : cpGCL :=
   CChoice p (CAssign x (const true)) (CAssign x (const false)).
 
 Definition goldfish_piranha : cpGCL :=
-  sample 0%nat (1#2) ;;
-  CAssign 1%nat (const true) ;;
+  sample 0%nat (1#2) ;;;
+  CAssign 1%nat (const true) ;;;
   CChoice (1#2) (CAssign 2%nat (fun st => st 0%nat))
-                (CAssign 2%nat (fun st => st 1%nat)) ;;
+                (CAssign 2%nat (fun st => st 1%nat)) ;;;
   CObserve (fun st => eqb (st 2%nat) true).
 
 Definition goldfish_piranha_tree : tree St :=
@@ -94,10 +94,10 @@ Example ex16 : infer (const 1) (evalCompile' ex15_c empty) ==
 Proof. reflexivity. Qed.
 
 Definition fair_coin : cpGCL :=
-  CAssign 0 (const false) ;;
-  CAssign 1 (const false) ;;
+  CAssign 0 (const false) ;;;
+  CAssign 1 (const false) ;;;
   CWhile (fun st => eqb (st 0%nat) (st 1%nat))
-         (sample 0%nat (1#3) ;; sample 1%nat (1#3)).
+         (sample 0%nat (1#3) ;;; sample 1%nat (1#3)).
 
 Definition fair_coin_tree : tree St := evalCompile' fair_coin empty.
 
@@ -108,21 +108,21 @@ Example ex18 : infer ex17_f fair_coin_tree == cwpf fair_coin ex17_f empty.
 Proof. reflexivity. Qed.
 
 Definition two_thirds_loop (x : nat) (z : nat) : cpGCL :=
-  CAssign z (const true) ;;
+  CAssign z (const true) ;;;
     CWhile (fun st => st z)
            (CChoice (1#2)
-                    (CAssign x (const true) ;;
+                    (CAssign x (const true) ;;;
                      CAssign z (const false))
                     (CChoice (1#2)
                              CSkip
-                             (CAssign x (const false) ;;
+                             (CAssign x (const false) ;;;
                               CAssign z (const false)))).
 
 Definition fair_coin_loop : cpGCL :=
-  CAssign 0 (const false) ;;
-  CAssign 1 (const false) ;;
+  CAssign 0 (const false) ;;;
+  CAssign 1 (const false) ;;;
   CWhile (fun st => eqb (st 0%nat) (st 1%nat))
-         (two_thirds_loop 0%nat 2%nat ;;
+         (two_thirds_loop 0%nat 2%nat ;;;
           two_thirds_loop 1%nat 2%nat).
 
 Definition fair_coin_loop_tree : tree St := evalCompile' fair_coin_loop empty.
@@ -157,10 +157,7 @@ Proof.
   unfold compose, const, indicator. rewrite Qmult_1_l, Qplus_0_r.
   revert x.
   induction i; intro x. simpl. unfold const. reflexivity.
-  simpl in *.
-  (* rewrite IHi. *)
-  unfold compose. 
-  rewrite IHi; reflexivity.
+  simpl in *; unfold compose; rewrite IHi; reflexivity.
 Qed.
 
 (** Some properties of upd (requiring funext) *)
@@ -242,7 +239,7 @@ Lemma upd_1_0_shadow st x y z w :
 Proof. repeat (rewrite upd_comm; auto; rewrite upd_shadow). Qed.
 
 Lemma iid_wpf_fair_coin :
-  iid_wpf (fun st : St => eqb (st O) (st (S O))) (sample 0 (1 # 3);; sample 1 (1 # 3)).
+  iid_wpf (fun st : St => eqb (st O) (st (S O))) (sample 0 (1 # 3);;; sample 1 (1 # 3)).
 Proof.
   intros f x i. simpl.
   unfold compose, const, indicator; simpl.
@@ -251,16 +248,16 @@ Proof.
   rewrite wpf_unroll_false with (st := upd 1 false (upd 0 true x)); auto.
   rewrite wpf_unroll_false with (st := upd 1 true (upd 0 false x)); auto.
   cut (wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                   (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+                   (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f
            (upd 1 true (upd 0 true x)) ==
        wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                   (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+                   (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f x).
   { intro H; rewrite H; clear H.
     cut (wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                     (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+                     (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f
              (upd 1 false (upd 0 false x)) ==
          wpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                     (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+                     (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f x).
     { lra. }
     revert x Hx.
     induction i; intros x Hx; simpl.
@@ -279,7 +276,7 @@ Proof.
 Qed.
 
 Lemma iid_wlpf_fair_coin :
-  iid_wlpf (fun st : St => eqb (st O) (st (S O))) (sample 0 (1 # 3);; sample 1 (1 # 3)).
+  iid_wlpf (fun st : St => eqb (st O) (st (S O))) (sample 0 (1 # 3);;; sample 1 (1 # 3)).
 Proof.
   intros f x i. simpl.
   unfold compose, const, indicator; simpl.
@@ -288,16 +285,16 @@ Proof.
   rewrite wlpf_unroll_false with (st := upd 1 false (upd 0 true x)); auto.
   rewrite wlpf_unroll_false with (st := upd 1 true (upd 0 false x)); auto.
   cut (wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                    (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+                    (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f
             (upd 1 true (upd 0 true x)) ==
        wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                    (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+                    (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f x).
   { intro H; rewrite H; clear H.
     cut (wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                      (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f
+                      (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f
               (upd 1 false (upd 0 false x)) ==
          wlpf (unroll (fun st : St => Bool.eqb (st O) (st (S O)))
-                      (sample 0 (1 # 3);; sample 1 (1 # 3)) i) f x).
+                      (sample 0 (1 # 3);;; sample 1 (1 # 3)) i) f x).
     { lra. }
     revert x Hx.
     induction i; intros x Hx; simpl.
@@ -360,7 +357,7 @@ Eval compute in Qred ∘ cwpf fair_coin (fun st => if st O then 1 else 0).
 
 Definition fair_coin_noinit : cpGCL :=
   CWhile (fun st => eqb (st 0%nat) (st 1%nat))
-         (sample 0%nat (1#3) ;; sample 1%nat (1#3)).
+         (sample 0%nat (1#3) ;;; sample 1%nat (1#3)).
 
 Lemma fair_coin_noinit_cwp' (f : St -> Q) :
   expectation f ->
