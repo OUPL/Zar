@@ -473,20 +473,48 @@ Qed.
 Instance Proper_infimum {A B : Type} {oB : OType B}
   : Proper (equ ==> equ ==> iff) (@infimum A B oB).
 Proof.
-  intros x y Hequ f g Hequ'.
-  split; intro Hinf.
-  - admit.
-  - admit.
-Admitted.
+  intros x y [Hequ0 Hequ1] f g [Hequ0' Hequ1'].
+  split; intros [Hlb Hglb].
+  - split.
+    + intro z.
+      transitivity x; auto.
+      transitivity (f z); auto.
+    + intros lb Hlb'.
+      transitivity x; auto.
+      apply Hglb.
+      intro z; transitivity (g z); auto.
+  - split.
+    + intro z.
+      transitivity y; auto.
+      transitivity (g z); auto.
+    + intros lb Hlb'.
+      transitivity y; auto.
+      apply Hglb.
+      intro z; transitivity (f z); auto.
+Qed.
 
 Instance Proper_supremum {A B : Type} {oB : OType B}
   : Proper (equ ==> equ ==> iff) (@supremum A B oB).
 Proof.
-  intros x y Hequ f g Hequ'.
-  split; intro Hinf.
-  - admit.
-  - admit.
-Admitted.
+  intros x y [Hequ0 Hequ1] f g [Hequ0' Hequ1'].
+  split; intros [Hub Hlub].
+  - split.
+    + intro z.
+      transitivity x; auto.
+      transitivity (f z); auto.
+    + intros ub Hub'.
+      transitivity x; auto.
+      apply Hlub.
+      intro z; transitivity (g z); auto.
+  - split.
+    + intro z.
+      transitivity y; auto.
+      transitivity (g z); auto.
+    + intros lb Hub'.
+      transitivity y; auto.
+      apply Hlub.
+      intro z; transitivity (f z); auto.
+Qed.
 
 Lemma chain_equ {A : Type} `{OType A} (f g : nat -> A) :
   equ f g <-> forall i, equ (f i) (g i).

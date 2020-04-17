@@ -9,6 +9,7 @@ Require Import Coq.micromega.Lia.
 Require Import ExtLib.Structures.Monad.
 Require Import ExtLib.Structures.MonadState.
 Require Import ExtLib.Data.Monads.StateMonad.
+Require Import Permutation.
 Local Open Scope program_scope.
 Import ListNotations.
 
@@ -96,9 +97,8 @@ Inductive congruent {A B : Type} : tree A -> tree B -> Prop :=
     congruent t1 t2 ->
     congruent (Fix n t1) (Fix m t2).
 
-Lemma congruent_refl {A : Type} (t : tree A) :
-  congruent t t.
-Proof. induction t; constructor; auto. Qed.
+Instance Reflexive_congruent {A : Type} : Reflexive (@congruent A A).
+Proof. intro t. induction t; constructor; auto. Qed.
 
 Lemma congruent_symm {A B : Type} (t1 : tree A) (t2 : tree B) :
   congruent t1 t2 -> congruent t2 t1.
@@ -107,6 +107,32 @@ Proof. intro H; induction H; constructor; auto. Qed.
 Lemma congruent_trans {A B C : Type}
       (t1 : tree A) (t2 : tree B) (t3 : tree C) :
   congruent t1 t2 -> congruent t2 t3 -> congruent t1 t3.
+Proof.
+  revert t3 t1; induction t2; intros t1 t3 H0 H1;
+    inversion H0; inversion H1; subst; constructor; auto.
+Qed.
+
+(** Stronger notion of congruence (leaves and fails not congruent) *)
+Inductive congruent' {A B : Type} : tree A -> tree B -> Prop :=
+| congruent'_leaf_leaf : forall x y, congruent' (Leaf x) (Leaf y)
+| congruent'_fail_fail : forall n m, congruent' (Fail _ n) (Fail _ m)
+| congruent'_choice : forall p q t1 t1' t2 t2',
+    congruent' t1 t1' -> congruent' t2 t2' ->
+    congruent' (Choice p t1 t2) (Choice q t1' t2')
+| congruence'_fix : forall n m t1 t2,
+    congruent' t1 t2 ->
+    congruent' (Fix n t1) (Fix m t2).
+
+Instance Reflexive_congruent' {A : Type} : Reflexive (@congruent' A A).
+Proof. intro t. induction t; constructor; auto. Qed.
+
+Lemma congruent'_symm {A B : Type} (t1 : tree A) (t2 : tree B) :
+  congruent' t1 t2 -> congruent' t2 t1.
+Proof. intro H; induction H; constructor; auto. Qed.
+
+Lemma congruent'_trans {A B C : Type}
+      (t1 : tree A) (t2 : tree B) (t3 : tree C) :
+  congruent' t1 t2 -> congruent' t2 t3 -> congruent' t1 t3.
 Proof.
   revert t3 t1; induction t2; intros t1 t3 H0 H1;
     inversion H0; inversion H1; subst; constructor; auto.
@@ -194,12 +220,6 @@ Fixpoint terminals {A : Type} (t : tree A) : nat :=
   | Fix _ t1 => terminals t1
   end.
 
-(* Lemma countb_le_terminals {A : Type} (f : A -> bool) (t : tree A) : *)
-(*   (countb f t <= terminals t)%nat. *)
-(* Proof. *)
-(*   induction t; simpl. *)
-(*   - destruct (f a); lia. *)
-
 Lemma terminals_nonzero {A : Type} (t : tree A) :
   (0 < terminals t)%nat.
 Proof. induction t; simpl; lia. Qed.
@@ -276,7 +296,7 @@ Qed.
 
 Lemma new_tree_perfect {A : Type} (lbl n : nat) :
   @perfect A (new_tree lbl n).
-Proof. induction n; simpl; constructor; auto; apply congruent_refl. Qed.
+Proof. induction n; simpl; constructor; auto; reflexivity. Qed.
 
 Lemma congruent_heightb {A B : Type} (t1 : tree A) (t2 : tree B) :
   congruent t1 t2 ->
@@ -302,8 +322,8 @@ Proof.
       rewrite 2!Nat.max_id in *.
       inversion Hh.
       constructor.
-      * apply IHt1_1; firstorder.
-      * apply IHt1_2; firstorder.
+      * apply IHt1_1; auto; lia.
+      * apply IHt1_2; auto; lia.
     + inversion Hp2.
   - inversion Hp1.
 Qed.
@@ -323,7 +343,7 @@ Lemma add_to_tree_congruent {A : Type} `{EqType A} (x : A) (t : tree A) :
 Proof.
   induction t; simpl; try destruct a; try constructor; auto.
   - destruct (tree_eqb t1 (add_to_tree x t1));
-      constructor; auto; apply congruent_refl.
+      constructor; auto; reflexivity.
 Qed.
 
 Lemma list_tree_aux_perfect {A : Type} `{EqType A}
@@ -573,11 +593,490 @@ Proof.
     apply list_tree_count_failb.
 Qed.
 
-
-Lemma Q_lem6 a b :
-  1 - (a # b) == Zpos b - a # b.
+Lemma terminals_add_to_tree_increasing {A : Type} `{EqType A}
+      (x : A) (t : tree A) :
+  (terminals t <= terminals (add_to_tree x t))%nat.
 Proof.
-Admitted.
+  induction t; simpl; try lia.
+  destruct (tree_eqb t1 (add_to_tree x t1)); simpl; lia.
+Qed.
+
+Lemma terminals_lt_choice {A : Type} (p : Q) (t1 t2 : tree A) :
+  (terminals t1 < terminals (Choice p t1 t2))%nat.
+Proof. generalize (terminals_nonzero t2); simpl; lia. Qed.
+
+Lemma in_tree_add_to_tree {A : Type} `{EqType A} (t : tree A) (x y : A) :
+  in_tree x t ->
+  in_tree x (add_to_tree y t).
+Proof.
+  induction t; simpl; intro Hin; auto; inversion Hin; subst;
+    try constructor; auto; destruct (tree_eqb t1 (add_to_tree y t1));
+      solve [constructor; auto].
+Qed.
+
+Lemma neq_in_tree_add_to_tree {A : Type} `{EqType A} (t : tree A) (x : A) :
+  ~ tree_eq t (add_to_tree x t) ->
+  in_tree x (add_to_tree x t).
+Proof.
+  induction t; simpl; intro Hneq.
+  - exfalso; apply Hneq; constructor.
+  - constructor.
+  - destruct (tree_eqb t1 (add_to_tree x t1)).
+    + apply in_tree_choice2; apply IHt2; intro HC;
+        apply Hneq; constructor; auto; reflexivity.
+    + apply in_tree_choice1; apply IHt1; intro HC;
+        apply Hneq; constructor; auto; reflexivity.
+  - constructor; apply IHt; intro HC; apply Hneq; constructor; auto.
+Qed.
+
+Lemma neq_add_to_tree {A : Type} `{EqType A} (lbl n : nat) (x : A) :
+  ~ tree_eq (new_tree lbl n) (add_to_tree x (new_tree lbl n)).
+Proof.
+  induction n; simpl.
+  - intro HC; inversion HC.
+  - destruct (tree_eqb_spec (new_tree lbl n)
+                            (add_to_tree x (new_tree lbl n))); try congruence.
+    intro HC. inversion HC; subst; congruence.
+Qed.
+
+Lemma in_tree_list_tree_aux {A : Type} `{EqType A}
+      (x : A) (lbl : nat) (l : list A) (t : tree A) :
+  in_tree x t ->
+  in_tree x (list_tree_aux lbl l t).
+Proof.
+  revert t.
+  induction l; simpl; intros t Hin; auto.
+  destruct (tree_eqb t (add_to_tree a t)).
+  - apply IHl; constructor; auto.
+  - apply IHl, in_tree_add_to_tree; auto.
+Qed.
+
+Lemma in_list_tree_aux {A : Type} `{EqType A}
+      (lbl : nat) (l : list A) (t : tree A) (x : A) :
+  In x l ->
+  in_tree x (list_tree_aux lbl l t).
+Proof.
+  revert t.
+  induction l; simpl; intros t []; subst.
+  - destruct (tree_eqb_spec t (add_to_tree x t)).
+    + apply in_tree_list_tree_aux.
+      apply in_tree_choice2. apply neq_in_tree_add_to_tree.
+      apply neq_add_to_tree.
+    + apply in_tree_list_tree_aux.
+      apply neq_in_tree_add_to_tree; auto.
+  - destruct (tree_eqb t (add_to_tree a t)); apply IHl; auto.
+Qed.
+
+Lemma in_tree_add_to_tree' {A : Type} `{EqType A} (x y : A) (t : tree A) :
+  in_tree x (add_to_tree y t) ->
+  x = y \/ in_tree x t.
+Proof.
+  induction t; simpl; intro Hin.
+  - inversion Hin; subst; right; constructor.
+  - inversion Hin; subst; left; auto.
+  - destruct (tree_eqb t1 (add_to_tree y t1)).
+    + inversion Hin; subst.
+      * right; solve [constructor; auto].
+      * apply IHt2 in H2. destruct H2; auto.
+        right; solve [constructor; auto].
+    + inversion Hin; subst.
+      * apply IHt1 in H2. destruct H2; auto.
+        right; solve [constructor; auto].
+      * right; solve [constructor; auto].
+  - inversion Hin; subst.
+    apply IHt in H2. destruct H2; auto.
+    right; constructor; auto.
+Qed.
+
+Lemma not_in_tree_new_tree {A : Type} `{EqType A} (x : A) (lbl n : nat) :
+  ~ in_tree x (new_tree lbl n).
+Proof.
+  induction n; simpl; intro HC; inversion HC; subst; congruence.
+Qed.
+
+Lemma add_to_tree_new_tree_eq {A : Type} `{EqType A} (x y : A) (lbl n : nat) :
+  in_tree x (add_to_tree y (new_tree lbl n)) ->
+  x = y.
+Proof.
+  induction n; simpl; intro Hin.
+  - inversion Hin; subst; reflexivity.
+  - rewrite add_to_tree_new_tree in Hin.
+    inversion Hin; subst.
+    + apply IHn; auto.
+    + exfalso; apply (not_in_tree_new_tree x lbl n); auto.
+Qed.
+
+Lemma in_list_tree_aux' {A : Type} `{EqType A}
+      (lbl : nat) (l : list A) (t : tree A) (x : A) :
+  in_tree x (list_tree_aux lbl l t) ->
+  (In x l \/ in_tree x t).
+Proof.
+  revert t.
+  induction l; simpl; intros t Hin.
+  - right; auto.
+  - destruct (tree_eqb_spec t (add_to_tree a t)).
+    + apply IHl in Hin.
+      destruct Hin.
+      * left; right; auto.
+      * inversion H0; subst.
+        -- right; auto.
+        -- left; left.
+           apply add_to_tree_new_tree_eq in H3; auto.
+    + apply IHl in Hin.
+      destruct Hin.
+      * left; right; auto.
+      * apply in_tree_add_to_tree' in H0; intuition.
+Qed.
+
+Lemma in_list_tree_aux'' {A : Type} `{EqType A}
+      (lbl : nat) (l : list A) (t : tree A) (x : A) :
+  (forall x, ~ in_tree x t) ->
+  in_tree x (list_tree_aux lbl l t) ->
+  In x l.
+Proof. intros H0 H1; apply in_list_tree_aux' in H1; firstorder. Qed.
+
+Lemma NoDup_app {A : Type} (l1 l2 : list A) :
+  NoDup (l1 ++ l2) ->
+  NoDup l1.
+Proof.
+  induction l1; simpl; intro Hnodup.
+  - constructor.
+  - inversion Hnodup; subst.
+    constructor.
+    + intro HC. apply H1. apply in_or_app; intuition.
+    + apply IHl1; auto.
+Qed.
+
+Lemma NoDup_app_comm {A : Type} (l1 l2 : list A) :
+  NoDup (l1 ++ l2) ->
+  NoDup (l2 ++ l1).
+Proof.
+  intro Hnodup.
+  apply Permutation_NoDup with (l := l1 ++ l2); auto.
+  apply Permutation_app_comm.
+Qed.
+
+Lemma in_tree_length_le_terminals {A : Type} (l : list A) (t : tree A) :
+  (forall x, In x l -> in_tree x t) ->
+  NoDup l ->
+  (length l <= terminals t)%nat.
+Proof.
+  revert l.
+  induction t; simpl; intros l Hin Hnodup.
+  - destruct l; simpl; try lia.
+    destruct l; simpl; try lia.
+    pose proof (Hin a0 (or_introl eq_refl)) as H.
+    pose proof (Hin a1 (or_intror (or_introl eq_refl))) as H'.
+    inversion H; subst. inversion H'; subst.
+    inversion Hnodup; subst.
+    exfalso; apply H2; left; auto.
+  - destruct l; simpl; try lia.
+    specialize (Hin a (or_introl eq_refl)).
+    inversion Hin.
+  - assert (H: exists l1 l2, Permutation l (l1 ++ l2) /\
+                        (forall x, In x l1 -> in_tree x t1) /\
+                        (forall x, In x l2 -> in_tree x t2)).
+    { clear IHt1 IHt2 Hnodup.
+      induction l; simpl in *.
+      - exists [], []. simpl. split.
+        + constructor.
+        + split; intuition.
+      - assert (H: forall x, In x l -> in_tree x (Choice q t1 t2)).
+        { intros x Hin'; apply Hin; right; auto. }
+        specialize (IHl H).
+        destruct IHl as (l1 & l2 & H0 & H1 & H2).
+        assert (in_tree a t1 \/ in_tree a t2).
+        { specialize (Hin a (or_introl (eq_refl))).
+          inversion Hin; subst; intuition. }
+        destruct H3.
+        + exists (a :: l1), l2; simpl; intuition; subst; auto.
+        + exists l1, (a :: l2); simpl; intuition; subst; auto.
+          rewrite Permutation_app_comm; simpl.
+          constructor; rewrite Permutation_app_comm; auto. }
+    destruct H as (l1 & l2 & H0 & H1 & H2).
+    assert (Hnodup1: NoDup l1).
+    { apply Permutation_NoDup in H0; auto.
+      eapply NoDup_app; eauto. }
+    assert (Hnodup2: NoDup l2).
+    { apply Permutation_NoDup in H0; auto.
+      eapply NoDup_app; eauto.
+      apply NoDup_app_comm; eauto. }
+    apply Permutation_length in H0. rewrite H0; clear H0.
+    rewrite app_length.
+    specialize (IHt1 l1 H1 Hnodup1).
+    specialize (IHt2 l2 H2 Hnodup2).
+    lia.
+  - apply IHt in Hnodup; auto.
+    intros x Hin'; apply Hin in Hin'; inversion Hin'; auto.
+Qed.
+
+(** PLAN: use an alternative construction of the bernoulli tree that
+  first builds the tree from a list containing a section of the
+  natural numbers (so therapply e are no duplicates) and then maps a
+  predicate over that tree to obtain the final result. We can easily
+  prove length <= terminals for the section tree and then show that
+  terminals is preserved by fmap. *)
+
+Definition seq_tree (lbl n : nat) : tree nat := list_tree lbl (seq 0 n).
+
+Definition bernoulli_tree_open' (lbl n d : nat) : tree bool :=
+  fmap (fun i => i <? n) (seq_tree lbl d).
+
+Definition bernoulli_tree' (lbl n d : nat) : tree bool :=
+  Fix lbl (bernoulli_tree_open' lbl n d).
+
+Lemma fmap_congruent' {A B : Type} (f : A -> B) (t : tree A) :
+  congruent' t (fmap f t).
+Proof. induction t; constructor; auto. Qed.
+
+Lemma congruent'_tree_eq {A B : Type} `{EqType A} `{EqType B}
+      (t1 : tree A) (t2 : tree B) (x : A) (y : B) :
+  congruent' t1 t2 ->
+  tree_eq t1 (add_to_tree x t1) ->
+  tree_eq t2 (add_to_tree y t2).
+Proof.
+  induction 1; simpl; intro Heq.
+  - constructor.
+  - inversion Heq.
+  - destruct (tree_eqb_spec t1 (add_to_tree x t1)); inversion Heq; subst.
+    + destruct (tree_eqb_spec t1' (add_to_tree y t1'));
+        constructor; auto; reflexivity.
+    + congruence.
+  - inversion Heq; subst; constructor; auto.
+Qed.
+
+Lemma new_tree_fmap {A B : Type} `{EqType A} `{EqType B}
+      (f : A -> B) (lbl n : nat) :
+  fmap f (new_tree lbl n) = new_tree lbl n.
+Proof. induction n; simpl; auto; rewrite IHn; reflexivity. Qed.
+
+Lemma add_to_tree_fmap_new_tree {A B : Type} `{EqType A} `{EqType B}
+      (x : A) (f : A -> B) (lbl n : nat) :
+  add_to_tree (f x) (new_tree lbl n) = fmap f (add_to_tree x (new_tree lbl n)).
+Proof.
+  induction n; simpl; auto.
+  rewrite 2!add_to_tree_new_tree.
+  simpl; rewrite IHn, new_tree_fmap; reflexivity.
+Qed.
+
+Lemma new_tree_all_fail {A : Type} (lbl n : nat) :
+  @all_fail A (new_tree lbl n).
+Proof. induction n; simpl; constructor; auto. Qed.
+
+Lemma heightb_fmap {A B : Type} (f : A -> B) (t : tree A) :
+  heightb (fmap f t) = heightb t.
+Proof. induction t; simpl; auto. Qed.
+
+Lemma no_fail_tree_eq_add_to_tree {A : Type} `{EqType A} (x : A) (t : tree A) :
+  no_fail t <-> tree_eq t (add_to_tree x t).
+Proof.
+  split.
+  - induction 1; simpl.
+    + constructor.
+    + destruct (tree_eqb_spec t1 (add_to_tree x t1)).
+      * constructor; auto; reflexivity.
+      * congruence.
+    + constructor; auto.
+  - induction t; simpl; intro Heq.
+    + constructor.
+    + inversion Heq.
+    + destruct (tree_eqb_spec t1 (add_to_tree x t1)).
+      * inversion Heq; subst; constructor; auto.
+      * inversion Heq; subst; congruence.
+    + inversion Heq; subst; constructor; auto.
+Qed.
+
+Lemma congruent'_no_fail {A B : Type} (t1 : tree A) (t2 : tree B) :
+  no_fail t1 ->
+  congruent' t1 t2 ->
+  no_fail t2.
+Proof.
+  intro Hnf. induction 1; simpl; inversion Hnf; subst; constructor; auto.
+Qed.
+
+Lemma tree_eq_congruent'_fmap {A B : Type} `{EqType A} `{EqType B}
+      (x : A) (y : B) (t1 : tree A) (t2 : tree B) :
+  congruent' t1 t2 ->
+  tree_eq t1 (add_to_tree x t1) ->
+  tree_eq t2 (add_to_tree y t2).
+Proof.
+  intros Hcong Heq.
+  apply no_fail_tree_eq_add_to_tree.
+  apply no_fail_tree_eq_add_to_tree in Heq.
+  eapply congruent'_no_fail; eauto.
+Qed.
+
+Lemma tree_eq_add_to_tree_fmap {A B : Type} `{EqType A} `{EqType B}
+      (f : A -> B) (x : A) (y : B) (t : tree A) :
+  tree_eq t (add_to_tree x t) ->
+  tree_eq (fmap f t) (add_to_tree y (fmap f t)).
+Proof. apply tree_eq_congruent'_fmap, fmap_congruent'. Qed.
+
+Lemma add_to_tree_fmap {A B : Type} `{EqType A} `{EqType B}
+      (f : A -> B) (x : A) (t : tree A) :
+  add_to_tree (f x) (fmap f t) = fmap f (add_to_tree x t).
+Proof.
+  induction t; simpl; auto.
+  - destruct (tree_eqb_spec (fmap f t1) (add_to_tree (f x) (fmap f t1)));
+      destruct (tree_eqb_spec t1 (add_to_tree x t1)).
+    + rewrite IHt2; reflexivity.
+    + exfalso; apply n.
+      eapply tree_eq_congruent'_fmap; eauto.
+      apply congruent'_symm, fmap_congruent'.
+    + exfalso; apply n.
+      apply tree_eq_congruent'_fmap with (x0:=x) (t3:=t1); auto.
+      apply fmap_congruent'.
+    + rewrite IHt1; reflexivity.
+  - rewrite IHt; reflexivity.
+Qed.
+
+Lemma list_tree_aux_map_fmap {A B : Type} `{EqType A} `{EqType B}
+      (lbl : nat) (f : A -> B) (l : list A) (t : tree A) :
+  list_tree_aux lbl (map f l) (fmap f t) = fmap f (list_tree_aux lbl l t).
+Proof.
+  revert t.
+  induction l; simpl; intro t; auto.
+  destruct (tree_eqb_spec (fmap f t) (add_to_tree (f a) (fmap f t))).
+  - destruct (tree_eqb_spec t (add_to_tree a t)).
+    + rewrite <- IHl; simpl; f_equal; f_equal.
+      rewrite add_to_tree_fmap_new_tree, heightb_fmap; reflexivity.
+    + subst; exfalso; apply n.
+      eapply congruent'_tree_eq; eauto.
+      apply congruent'_symm. apply fmap_congruent'.
+  - destruct (tree_eqb_spec t (add_to_tree a t)).
+    + apply tree_eq_add_to_tree_fmap with (f0:=f) (y:=f a) in t0; congruence.
+    + rewrite <- IHl, add_to_tree_fmap; reflexivity.
+Qed.
+
+Lemma list_tree_map_fmap {A B : Type} `{EqType A} `{EqType B}
+      (lbl : nat) (f : A -> B) (l : list A) :
+  list_tree lbl (map f l) = fmap f (list_tree lbl l).
+Proof.
+  unfold list_tree; simpl.
+  rewrite <- list_tree_aux_map_fmap; reflexivity.
+Qed.
+
+Lemma seq_cons a b :
+  (0 < b)%nat ->
+  seq a b = a :: seq (S a) (b-1).
+Proof.
+  destruct b; simpl; try lia.
+  simpl; rewrite Nat.sub_0_r; reflexivity.
+Qed.  
+
+Lemma seq_S_n n :
+  seq 0 (S n) = seq 0 n ++ [n].
+Proof.
+  assert (H: (S n = n + 1)%nat).
+  { lia. }
+  rewrite H.
+  apply seq_app.
+Qed.
+
+Lemma app_cons_assoc {A : Type} (x : A) (l1 l2 : list A) :
+  l1 ++ x :: l2 = (l1 ++ [x]) ++ l2.
+Proof. rewrite <- app_assoc; reflexivity. Qed.
+
+Lemma seq_app_S b c :
+  (0 < c)%nat ->
+  seq 0 b ++ seq b c = seq 0 (S b) ++ seq (S b) (c-1).
+Proof.
+  intro Hlt.
+  assert (H: seq b c = b :: seq (S b) (c - 1)).
+  { apply seq_cons; auto. }
+  rewrite H; clear H. simpl.
+  rewrite app_cons_assoc.
+  rewrite <- seq_S_n.
+  reflexivity.
+Qed.
+
+Lemma seq_app' (a b : nat) :
+  (a <= b)%nat ->
+  seq 0 b = seq 0 a ++ seq a (b-a).
+Proof.
+  intro Hle.
+  assert (H: (b = a + (b - a))%nat).
+  { lia. }
+  rewrite H at 1.
+  apply seq_app.
+Qed.
+  
+(*   revert b. *)
+(*   induction a; simpl; intros b Hle. *)
+(*   - rewrite Nat.sub_0_r; reflexivity. *)
+(*   - rewrite IHa; try lia; clear IHa. *)
+(*     assert (0 :: seq 1 a = seq O (S a))%nat. *)
+(*     { reflexivity. } *)
+(*     rewrite app_comm_cons. *)
+(*     rewrite H; clear H. *)
+(*     assert (b - S a = (b - a) - 1)%nat. *)
+(*     { lia. } *)
+(*     rewrite H; clear H. *)
+(*     apply seq_app_S; lia. *)
+(* Qed. *)
+
+Lemma const_map_repeat {A B : Type} (f : A -> B) (l : list A) (y : B) :
+  (forall x, In x l -> f x = y) ->
+  map f l = repeat y (length l).
+Proof.
+  induction l; simpl; intro Hin; auto.
+  rewrite Hin, IHl; auto.
+Qed.
+
+Lemma bernoulli_tree_bernoulli_tree' (lbl n d : nat) :
+  (n <= d)%nat ->
+  bernoulli_tree lbl n d = bernoulli_tree' lbl n d.
+Proof.
+  intro Hle.
+  unfold bernoulli_tree, bernoulli_tree'.
+  f_equal.
+  unfold bernoulli_tree_open, bernoulli_tree_open'.
+  unfold seq_tree.
+  assert (H: repeat true n ++ repeat false (d - n) =
+             map (fun i => i <? n) (seq 0 d)).
+  { rewrite seq_app' with (a:=n); auto.
+    rewrite map_app.
+    f_equal.
+    - clear Hle.
+      rewrite const_map_repeat with (y:=true).
+      + rewrite seq_length; auto.
+      + intros x Hin.
+        apply in_seq in Hin.
+        destruct (Nat.ltb_spec0 x n); auto; lia.
+    - rewrite const_map_repeat with (y:=false).
+      + rewrite seq_length; auto.
+      + intros x Hin.
+        apply in_seq in Hin.
+        destruct Hin.
+        destruct (Nat.ltb_spec0 x n); auto.
+        lia. }
+  rewrite H; clear H.
+  apply list_tree_map_fmap.
+Qed.
+
+Lemma fmap_terminals {A B : Type} (t : tree A) (f : A -> B) :
+  terminals (fmap f t) = terminals t.
+Proof. induction t; simpl; lia. Qed.
+
+Lemma denom_le_terminals (lbl n d : nat) :
+  (n <= d)%nat ->
+  (d <= terminals (bernoulli_tree lbl n d))%nat.
+Proof.
+  intro Hle.
+  rewrite bernoulli_tree_bernoulli_tree'; auto.
+  unfold bernoulli_tree'.
+  unfold bernoulli_tree_open'.
+  simpl.
+  rewrite fmap_terminals.
+  unfold seq_tree.
+  unfold list_tree.
+  generalize (seq_length d 0); intro H; rewrite <- H; clear H.
+  apply in_tree_length_le_terminals.
+  - intros x Hin.
+    apply in_list_tree_aux.
+    rewrite seq_length; auto.
+  - apply seq_NoDup.
+Qed.
 
 Lemma bernoulli_tree_spec (lbl n d : nat) :
   (0 < d)%nat -> (n <= d)%nat ->
@@ -591,12 +1090,22 @@ Proof.
   set (n' := Z.of_nat n).
   set (T := terminals (bernoulli_tree_open lbl n d)).
   rewrite Q_lem6.
+  assert (H0: (0 < T)%nat).
+  { apply terminals_nonzero. }
+  assert (H1: (d <= T)%nat).
+  { apply denom_le_terminals; auto. }
   rewrite Qdiv_Qmake.
-  - admit.
-  - assert (0 < T)%nat.
-    { admit. }
-    admit.
-Admitted.
+  - rewrite Z_pos_of_nat; auto.
+    rewrite <- Nat2Z.inj_sub; try lia.
+    assert (H2: (T - (T - d))%nat = d).
+    { lia. }
+    rewrite H2; clear H2.
+    rewrite <- Q_lem1.
+    rewrite Z_to_pos_of_nat.
+    rewrite Qmake_1; try lia.
+    lra.
+  - rewrite Z_pos_of_nat; lia.
+Qed.
 
 Lemma nondivergent_no_fix_infer_fail_lt_1 {A : Type} (n : nat) (t : tree A) :
   not_bound_in n t ->
@@ -740,16 +1249,6 @@ Fixpoint defail {A : Type} (t : tree A) : tree (nat + A) :=
   | Fix n t1 => Fix n (defail t1)
   end.
 
-Inductive no_fail {A : Type} : tree A -> Prop :=
-| no_fail_leaf : forall x, no_fail (Leaf x)
-| no_fail_choice : forall p t1 t2,
-    no_fail t1 ->
-    no_fail t2 ->
-    no_fail (Choice p t1 t2)
-| no_fail_fix : forall n t,
-    no_fail t ->
-    no_fail (Fix n t).
-
 Lemma defail_no_fail {A : Type} (t : tree A) :
   no_fail (defail t).
 Proof. induction t; constructor; auto. Qed.
@@ -837,56 +1336,6 @@ Definition mixed_bind {A B : Type}
                      | inl n => Leaf (inl n)
                      | inr a => k a
                      end).
-
-(* Lemma mixed_bind_infer_f {A B : Type} *)
-(*       (t : tree A) (k : A -> tree B) (f : B -> Q) : *)
-(*   infer_f f (tree_bind t k) == *)
-(*   infer_mixed' (mixf f) (mixed_bind (defail t) (fun x => defail (k x))). *)
-(* Proof. *)
-(*   induction t; simpl. *)
-(*   - unfold mixed_bind, tree_bind; simpl. *)
-(*     rewrite infer_mixed'_infer_f; reflexivity. *)
-(*   - reflexivity. *)
-(*   - rewrite IHt1, IHt2; reflexivity. *)
-(*   - rewrite IHt. rewrite <- infer_mixed'_infer_fail. *)
-(*     unfold mixed_bind, tree_bind. *)
-(*     admit. *)
-(* Admitted. *)
-
-(* Lemma infer_mixed'_bind_choice {A : Type} *)
-(*       (t : tree (nat + bool)) (t1 t2 : tree (nat + A)) (lbl : nat) : *)
-(*   (forall (n : nat) (x : bool), *)
-(*       bound_in n t -> ~ in_tree (inl n) (if x then t1 else t2)) -> *)
-(*   ~ in_tree (inl lbl) t -> *)
-(*   infer_mixed' (lbl_indicator lbl) *)
-(*                (mixed_bind t (fun b => if b : bool then t1 else t2)) == *)
-(*   (infer_mixed' (mixf (fun b => if b : bool then 1 else 0)) t) * infer_fail lbl t1 + *)
-(*   (infer_mixed' (mixf (fun b => if b : bool then 0 else 1)) t) * infer_fail lbl t2. *)
-(* Admitted. *)
-
-(* Lemma infer_mixed'_bind {A B : Type} *)
-(*       (f : (nat + B) -> Q) (t : tree (nat + A)) (k : (nat + A) -> tree (nat + B)) : *)
-(*   (forall n x, bound_in n t -> not_in n (k x)) -> *)
-(*   infer_mixed' (infer_mixed' f ∘ k) t == infer_mixed' f (tree_bind t k). *)
-(* Proof. *)
-(*   unfold compose, tree_bind. *)
-(*   revert f k. *)
-(*   induction t; simpl; intros f k Hnotin; try reflexivity. *)
-(*   - rewrite <- IHt1, <- IHt2; try lra; *)
-(*       intros n x Hbound; apply Hnotin; solve [constructor; auto]. *)
-(*   - rewrite IHt. *)
-(*     + assert (H: infer_mixed' (lbl_indicator n) (join (fmap k t)) == *)
-(*                  infer_mixed' (fun x => infer_mixed' (lbl_indicator n) (k x)) t). *)
-(*       { rewrite IHt; try reflexivity. *)
-(*         intros m x Hbound; apply Hnotin. *)
-(*         destruct (Nat.eqb_spec m n); subst; constructor; auto. } *)
-(*       rewrite H.       *)
-(*       (* TODO *) *)
-(*       admit. *)
-(*     + intros m x Hbound; apply Hnotin. *)
-(*       destruct (Nat.eqb_spec m n); subst; constructor; auto. *)
-(* Admitted. *)      
-                                                                  
 
 Definition disjoint {A : Type} (f g : A -> Q) :=
   forall x, (0 < f x -> g x == 0) /\ (0 < g x -> f x == 0).
@@ -1057,14 +1506,9 @@ Lemma infer_f_bounded {A : Type} (t : tree A) (f : A -> Q) :
 Proof.
   intros Hwf Hbounded.
   rewrite <- infer_mixed_infer_f.
-  (* set (g := fun x : nat + A => match x with *)
-  (*                         | inl _ => 0 *)
-  (*                         | inr x => f x *)
-  (*                         end). *)
   assert (H: infer_mixed (mixf f) t ==
              sum_Q_list (map (fun h => infer_mixed h t) [mixf f])).
   { simpl; rewrite Qplus_0_r; reflexivity. }
-  (* unfold mixf, cotuple. *)
   rewrite H; clear H.
   apply infer_mixed_disjoint_le_1; auto.
   - constructor; intuition; constructor.
@@ -1130,24 +1574,15 @@ Proof.
     unfold g in H0. nra.
 Qed.
 
-Inductive only_fail {A : Type} : nat -> tree A -> Prop :=
-| only_fail_leaf : forall lbl x, only_fail lbl (Leaf x)
-| only_fail_fail : forall lbl, only_fail lbl (Fail _ lbl)
-| only_fail_choice : forall lbl p t1 t2,
-    only_fail lbl t1 ->
-    only_fail lbl t2 ->
-    only_fail lbl (Choice p t1 t2)
-| only_fail_fix : forall lbl m t,
-    only_fail lbl t ->
-    only_fail lbl (Fix m t).
-
+(** A specialized "nondivergent" predicate which is satisfied by trees
+  constructed by bernoulli_tree_open. *)
 Inductive nd {A : Type} : tree A -> Prop :=
 | nd_fix : forall lbl t x,
     no_fix t ->
     only_fail lbl t ->
     in_tree x t ->
     nd (Fix lbl t).
-                              
+
 Lemma nd_infer_fail_lt_1 {A : Type} (lbl : nat) (x : A) (t : tree A) :
   wf_tree t ->
   no_fix t ->
@@ -1282,8 +1717,6 @@ Proof.
   generalize (nd_infer_f_sum_1 f t Hnd Hub Hwf); intro Hsum; lra.
 Qed.
 
-(* Fixpoint compile (c : cpGCL) : state nat (St -> tree St) := *)
-
 Definition Qnum_nat (p : Q) : nat := Z.to_nat (Qnum p).
 Definition Qden_nat (p : Q) : nat := Pos.to_nat (Qden p).
 
@@ -1319,10 +1752,10 @@ Proof.
     + destruct p. simpl.
       rewrite Zle_Qle.
       unfold inject_Z.
-      admit.
+      unfold Qle in *; simpl in *;lia.
   - lia.
-  - admit.
-Admitted.
+  - destruct p; simpl; unfold Qle in *; simpl in *; lia.
+Qed.
 
 Lemma unfold_translate_bernoulli_aux {A : Type} f q (t1 t2 : tree A) n :
   infer_f f (evalState (translate_bernoulli_aux (Choice q t1 t2)) n) ==
@@ -1386,17 +1819,6 @@ Proof.
   - apply IHl, only_fail_add_to_tree; auto.
 Qed.
 
-Lemma in_tree_add_to_tree {A : Type} `{EqType A}
-      (x y : A) (t : tree A) :
-  in_tree x t ->
-  in_tree x (add_to_tree y t).
-Proof.
-  induction t; simpl; intro Hin; auto; inversion Hin; subst.
-  - destruct (tree_eqb t1 (add_to_tree y t1)); solve [constructor; auto].
-  - destruct (tree_eqb t1 (add_to_tree y t1)); solve [constructor; auto].
-  - constructor; apply IHt; auto.
-Qed.
-
 Lemma in_tree_tree_eq {A : Type} `{EqType A} (x : A) (t1 t2 : tree A) :
   tree_eq t1 t2 ->
   in_tree x t1 ->
@@ -1405,18 +1827,6 @@ Proof.
   induction 1; intro Heq; auto;
     inversion Heq; subst; solve [constructor; auto].
 Qed.
-
-Inductive has_fail {A : Type} : tree A -> Prop :=
-| has_fail_fail : forall n, has_fail (Fail _ n)
-| has_fail_choice1 : forall p t1 t2,
-    has_fail t1 ->
-    has_fail (Choice p t1 t2)
-| has_fail_choice2 : forall p t1 t2,
-    has_fail t2 ->
-    has_fail (Choice p t1 t2)
-| has_fail_fix : forall n t,
-    has_fail t ->
-    has_fail (Fix n t).
 
 Lemma not_tree_eq_add_to_tree_has_fail {A : Type} `{EqType A}
       (x : A) (t : tree A) :
@@ -1436,8 +1846,7 @@ Proof.
   - constructor; apply IHt; intro HC; apply Hneq; constructor; auto.
 Qed.
 
-Lemma in_tree_add_to_tree' {A : Type} `{EqType A}
-      (x : A) (t : tree A) :
+Lemma has_fail_in_tree_add_to_tree {A : Type} `{EqType A} (x : A) (t : tree A) :
   has_fail t ->
   in_tree x (add_to_tree x t).
 Proof.
@@ -1453,18 +1862,6 @@ Proof.
   - constructor; eauto.
 Qed.
 
-Lemma in_tree_list_tree_aux {A : Type} `{EqType A}
-      (x : A) (lbl : nat) (l : list A) (t : tree A) :
-  in_tree x t ->
-  in_tree x (list_tree_aux lbl l t).
-Proof.
-  revert t.
-  induction l; simpl; intros t Hin; auto.
-  destruct (tree_eqb t (add_to_tree a t)).
-  - apply IHl; constructor; auto.
-  - apply IHl, in_tree_add_to_tree; auto.
-Qed.
-
 Lemma free_in_new_tree {A : Type} `{EqType A} (lbl n : nat) :
   @free_in A lbl (new_tree lbl n).
 Proof. induction n; constructor; auto. Qed.
@@ -1472,26 +1869,6 @@ Proof. induction n; constructor; auto. Qed.
 Lemma has_fail_new_tree {A : Type} `{EqType A} (lbl n : nat) :
   @has_fail A (new_tree lbl n).
 Proof. induction n; constructor; auto. Qed.
-
-Lemma in_list_tree_aux {A : Type} `{EqType A}
-      (x : A) (lbl : nat) (l : list A) (t : tree A) :
-  In x l ->
-  in_tree x (list_tree_aux lbl l t).
-Proof.
-  revert t.
-  induction l; simpl; intros t Hin.
-  - inversion Hin.
-  - destruct Hin; subst.
-    + destruct (tree_eqb_spec t (add_to_tree x t)).
-      * apply in_tree_list_tree_aux.
-        apply in_tree_choice2.
-        eapply in_tree_add_to_tree'. simpl.
-        apply has_fail_new_tree.
-      * apply in_tree_list_tree_aux.
-        apply in_tree_add_to_tree'.
-        eapply not_tree_eq_add_to_tree_has_fail; eauto.
-    + destruct (tree_eqb t (add_to_tree a t)); apply IHl; auto.
-Qed.
 
 Lemma nd_bernoulli_tree lbl n d :
   (0 < d)%nat ->

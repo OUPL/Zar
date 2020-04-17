@@ -805,11 +805,9 @@ Proof.
   - rewrite sum_Q_list_map_plus, 2!sum_Q_list_map_mult_scalar.
     inversion Hwf; subst.
     inversion Hnd; subst.
-    + rewrite H1; field_simplify; rewrite 2!Qdiv_1_den.
-      apply IHt2; auto; intros x Hin.
+    + rewrite H1; field_simplify; apply IHt2; auto; intros x Hin.
       apply Hnotbound in Hin; inversion Hin; subst; auto.
-    + rewrite H1; field_simplify; rewrite 2!Qdiv_1_den.
-      apply IHt1; auto; intros x Hin.
+    + rewrite H1; field_simplify; apply IHt1; auto; intros x Hin.
       apply Hnotbound in Hin; inversion Hin; subst; auto.
     + assert (Ht1: forall x, In x l -> not_bound_in x t1).
       { intros x Hin; specialize (Hnotbound x Hin).

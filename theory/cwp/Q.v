@@ -333,9 +333,7 @@ Proof. intros H0 H1; field; split; nra. Qed.
 Lemma Qdiv_Qmake (a b : Z) (c d : positive) :
   (0 < b)%Z ->
   (a # c) / (b # d) == (a * Zpos d # Z.to_pos b * c).
-Proof.
-  intro Hlt.
-Admitted.
+Proof. intro Hlt; unfold Qeq; destruct b; simpl; lia. Qed.
 
 Lemma Q_lem5 (a : Z) (b : nat) (c : positive) :
   (0 < b)%nat ->
@@ -364,13 +362,38 @@ Qed.
 Lemma Q_lem6 a b :
   1 - (a # b) == Zpos b - a # b.
 Proof.
-Admitted.
+  unfold Qeq; destruct a; simpl.
+  - reflexivity.
+  - rewrite Pos.mul_1_r; reflexivity.
+  - lia.
+Qed.
 
-(* Lemma Q_lem6 a b : *)
-(*   a == (Qnum a * b # Qden a * b). *)
+Lemma Z_pos_of_nat (n : nat) :
+  (0 < n)%nat ->
+  Z.pos (Pos.of_nat n) = Z.of_nat n.
+Proof.
+  intro Hlt.
+  unfold Z.of_nat.
+  destruct n. lia.
+  rewrite Pos.of_nat_succ; reflexivity.
+Qed.
 
-(* Lemma Q_lem6 (a b : Z) : *)
-(*   a - (b#c) == (a*c # c *)
+Lemma Z_to_pos_of_nat (n : nat) :
+  Z.to_pos (Z.of_nat n) = Pos.of_nat n.
+Proof.
+  unfold Pos.of_nat.
+  destruct n. reflexivity.
+  simpl.
+  induction n. reflexivity.
+  simpl. rewrite IHn. reflexivity.
+Qed.
 
-(* (n' # Pos.of_nat T) / (1 - (Z.of_nat (T - d) # Pos.of_nat T)) == *)
-(*   n' # Pos.of_nat d *)
+Lemma Qmake_1 (n : nat) :
+  (1 <= n)%nat ->
+  Z.of_nat n # Pos.of_nat n == 1.
+Proof.
+  intro Hle.
+  unfold Qeq. simpl.
+  rewrite Z.mul_1_r.
+  rewrite Z_pos_of_nat; auto.
+Qed.

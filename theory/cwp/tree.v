@@ -209,6 +209,20 @@ Next Obligation.
   - intros ?; eapply tree_leq_trans; eauto.
 Qed.
 
+Definition tree_lt {A : Type} (t1 t2 : tree A) : Prop :=
+  tree_leq t1 t2 /\ not (tree_eq t1 t2).
+
+Definition tree_ltb {A : Type} `{EqType A} (t1 t2 : tree A) : bool :=
+  tree_leqb t1 t2 && negb (tree_eqb t1 t2).
+
+Lemma tree_ltb_spec {A : Type} `{EqType A} (t1 t2 : tree A)
+  : reflect (tree_lt t1 t2) (tree_ltb t1 t2).
+Proof.
+  unfold tree_lt, tree_ltb.
+  destruct (tree_leqb_spec t1 t2); destruct (tree_eqb_spec t1 t2);
+    simpl; constructor;intuition.
+Qed.
+
 Inductive free_in {A : Type} : nat -> tree A -> Prop :=
 | free_in_fail : forall n, free_in n (Fail _ n)
 | free_in_choice1 : forall n p t1 t2,
@@ -1016,3 +1030,46 @@ Inductive no_nested_fix {A : Type} : tree A -> Prop :=
 | no_nested_fix_fix : forall lbl t,
     no_fix t ->
     no_nested_fix (Fix lbl t).
+
+Inductive has_fail {A : Type} : tree A -> Prop :=
+| has_fail_fail : forall n, has_fail (Fail _ n)
+| has_fail_choice1 : forall p t1 t2,
+    has_fail t1 ->
+    has_fail (Choice p t1 t2)
+| has_fail_choice2 : forall p t1 t2,
+    has_fail t2 ->
+    has_fail (Choice p t1 t2)
+| has_fail_fix : forall n t,
+    has_fail t ->
+    has_fail (Fix n t).
+
+Inductive all_fail {A : Type} : tree A -> Prop :=
+| all_fail_fail : forall lbl, all_fail (Fail _ lbl)
+| all_fail_choice : forall p t1 t2,
+    all_fail t1 ->
+    all_fail t2 ->
+    all_fail (Choice p t1 t2)
+| all_fail_fix : forall m t,
+    all_fail t ->
+    all_fail (Fix m t).
+
+Inductive only_fail {A : Type} : nat -> tree A -> Prop :=
+| only_fail_leaf : forall lbl x, only_fail lbl (Leaf x)
+| only_fail_fail : forall lbl, only_fail lbl (Fail _ lbl)
+| only_fail_choice : forall lbl p t1 t2,
+    only_fail lbl t1 ->
+    only_fail lbl t2 ->
+    only_fail lbl (Choice p t1 t2)
+| only_fail_fix : forall lbl m t,
+    only_fail lbl t ->
+    only_fail lbl (Fix m t).
+
+Inductive no_fail {A : Type} : tree A -> Prop :=
+| no_fail_leaf : forall x, no_fail (Leaf x)
+| no_fail_choice : forall p t1 t2,
+    no_fail t1 ->
+    no_fail t2 ->
+    no_fail (Choice p t1 t2)
+| no_fail_fix : forall n t,
+    no_fail t ->
+    no_fail (Fix n t).
