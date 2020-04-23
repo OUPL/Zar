@@ -7,6 +7,7 @@ Require Import List.
 Require Import Coq.QArith.QArith.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
+Require Import ExtLib.Structures.Monad.
 Import ListNotations.
 Local Open Scope program_scope.
 
@@ -878,3 +879,478 @@ Qed.
 (*     + generalize (@nondivergent_infer_fail_lt_1 _ t n H4 H1 H2); lra. *)
 (*     + rewrite IHt; auto. rewrite Qeq_bool_false; auto; reflexivity. *)
 (* Qed. *)
+
+(** infer_f and infer_f_lib coincide on "perfect" trees. Really only
+  nondivergence is necessary, and "perfect" is stronger. *)
+Lemma perfect_infer_f_infer_f_lib {A : Type} (f : A -> Q) (t : tree A) :
+  perfect t ->
+  infer_f f t == infer_f_lib f t.
+Proof.
+  induction 1; simpl; try lra.
+  rewrite IHperfect1, IHperfect2; lra.
+Qed.
+
+Lemma nondivergent_no_fix_infer_fail_lt_1 {A : Type} (n : nat) (t : tree A) :
+  not_bound_in n t ->
+  wf_tree t ->
+  nondivergent t ->
+  no_fix t ->
+  infer_fail n t < 1.
+Proof.
+  induction t; intros Hnotbound Hwf Hnd Hnf; simpl;
+    inversion Hwf; inversion Hnotbound; subst.
+  - lra.
+  - inversion Hnd.
+  - inversion Hnf; inversion Hnd; subst.
+    + rewrite H11; specialize (IHt2 H10 H4 H13 H6); lra.
+    + rewrite H11; specialize (IHt1 H8 H3 H13 H1); lra.
+    + destruct H14 as [H14 | H14].
+      * specialize (IHt1 H8 H3 H14 H1).
+        assert (infer_fail n t2 <= 1).
+        { apply infer_fail_le_1; auto. }
+        nra.
+      * specialize (IHt2 H10 H4 H14 H6).
+        assert (infer_fail n t1 <= 1).
+        { apply infer_fail_le_1; auto. }
+        nra.
+  - inversion Hnf.
+Qed.
+
+Lemma infer_f_bind_choice {A : Type} (f : A -> Q) (t : tree bool) (t1 t2 : tree A) :
+  (forall (n : nat) (x : bool), bound_in n t -> not_in n (if x then t1 else t2)) ->
+  infer_f f (bind t (fun b => if b : bool then t1 else t2)) ==
+  infer_f (fun b => if b : bool then 1 else 0) t * infer_f f t1 +
+  infer_f (fun b => if b : bool then 0 else 1) t * infer_f f t2.
+Proof.
+  intros Hnotin.
+  rewrite <- infer_f_bind; auto.
+  unfold compose; induction t; simpl.
+  - destruct a; lra.
+  - lra.
+  - rewrite IHt1, IHt2; try lra;
+      intros; apply Hnotin; solve [constructor; auto].
+  - rewrite IHt.
+    + destruct (Qeq_dec (infer_fail n t) 1).
+      * rewrite q, Qminus_cancel, 3!Qdiv_0_den; lra.
+      * field; lra.
+    + intros; apply Hnotin.
+      destruct (Nat.eqb_spec n0 n); subst; constructor; auto.
+Qed.
+
+Lemma infer_fail_bind_choice {A : Type} (t : tree bool) (t1 t2 : tree A) (lbl : nat) :
+  (forall (n : nat) (x : bool), bound_in n t -> not_in n (if x then t1 else t2)) ->
+  not_in lbl t ->
+  infer_fail lbl (bind t (fun b => if b : bool then t1 else t2)) ==
+  (infer_f (fun b => if b : bool then 1 else 0) t) * infer_fail lbl t1 +
+  (infer_f (fun b => if b : bool then 0 else 1) t) * infer_fail lbl t2.
+Proof.
+  intros Hnotin Hnotin'.
+  rewrite <- infer_fail_bind; auto.
+  unfold compose; induction t; simpl; inversion Hnotin'; subst.
+  - destruct a; lra.
+  - lra.
+  - rewrite IHt1, IHt2; auto; try lra;
+      intros; apply Hnotin; solve [constructor; auto].
+  - rewrite IHt; auto.
+    + destruct (Qeq_dec (infer_fail n t) 1).
+      * rewrite q, Qminus_cancel, 3!Qdiv_0_den; lra.
+      * field; lra.
+    + intros; apply Hnotin.
+      destruct (Nat.eqb_spec n0 n); subst; constructor; auto.
+Qed.
+
+Lemma infer_f_linear {A : Type} (f g : A -> Q) (t : tree A) :
+  infer_f (fun x => f x + g x) t == infer_f f t + infer_f g t.
+Proof.
+  induction t; simpl; try lra.
+  - rewrite IHt1, IHt2; lra.
+  - rewrite IHt.
+    destruct (Qeq_dec (infer_fail n t) 1).
+    + rewrite q, Qminus_cancel, 3!Qdiv_0_den; lra.
+    + field; lra.
+Qed.
+
+Lemma infer_fail_lt_1 {A : Type} (t : tree A) (n : nat) :
+  wf_tree t ->
+  not_bound_in n t ->
+  ~ infer_fail n t == 1 ->
+  infer_fail n t < 1.
+Proof.
+  intros Hwf Hnotbound Hneq.
+  assert (infer_fail n t <= 1).
+  { apply infer_fail_le_1; auto. }
+  lra.
+Qed.
+
+(** Here we define "infer_mixed", which is a single function that
+  subsumes infer_f and infer_fail but operates on trees in which the
+  leaves contain sum types, fail nodes have been replaced by inl
+  leaves, and leaves replaced by inr leaves.
+
+  We prove the obvious connections to infer_f and infer_fail. The
+  whole point is to aid in the proof of [infer_f_bounded]. By using
+  infer_mixed, we can make the induction hypothesis in
+  [infer_mixed_disjoint_le_1] sufficiently general. *)
+
+Definition lbl_indicator {A : Type} (n : nat) (x : nat + A) : Q :=
+  match x with
+  | inl m => if m =? n then 1 else 0
+  | inr _ => 0
+  end.
+
+Definition cotuple {A B C : Type} (f : A -> C) (g : B -> C) (x : A + B) : C :=
+  match x with
+  | inl a => f a
+  | inr b => g b
+  end.
+
+Definition mixf {A B : Type} : (B -> Q) -> A + B -> Q :=
+  cotuple (const 0).
+
+Fixpoint infer_mixed {A : Type} (f : nat + A -> Q) (t : tree A) : Q :=
+  match t with
+  | Leaf x => f (inr x)
+  | Fail _ n => f (inl n)
+  | Choice p t1 t2 => p * infer_mixed f t1 + (1-p) * infer_mixed f t2
+  | Fix m t1 =>
+    let a := infer_mixed f t1 in
+    let b := infer_mixed (lbl_indicator m) t1 in
+    a / (1 - b)
+  end.
+
+Fixpoint infer_mixed' {A : Type} (f : nat + A -> Q) (t : tree (nat + A)) : Q :=
+  match t with
+  | Leaf x => f x
+  | Fail _ n => 0
+  | Choice p t1 t2 => p * infer_mixed' f t1 + (1-p) * infer_mixed' f t2
+  | Fix m t1 =>
+    let a := infer_mixed' f t1 in
+    let b := infer_mixed' (lbl_indicator m) t1 in
+    a / (1 - b)
+  end.
+
+Fixpoint defail {A : Type} (t : tree A) : tree (nat + A) :=
+  match t with
+  | Leaf x => Leaf (inr x)
+  | Fail _ n => Leaf (inl n)
+  | Choice p t1 t2 => Choice p (defail t1) (defail t2)
+  | Fix n t1 => Fix n (defail t1)
+  end.
+
+Lemma defail_no_fail {A : Type} (t : tree A) :
+  no_fail (defail t).
+Proof. induction t; constructor; auto. Qed.
+
+Lemma infer_mixed_infer_fail {A : Type} (t : tree A) (n : nat) :
+  infer_mixed (lbl_indicator n) t == infer_fail n t.
+Proof.
+  revert n.
+  induction t; simpl; intro m; try reflexivity.
+  - rewrite IHt1, IHt2; reflexivity.
+  - rewrite 2!IHt; reflexivity.
+Qed.
+
+Lemma infer_mixed'_infer_fail {A : Type} (t : tree A) (n : nat) :
+  infer_mixed' (lbl_indicator n) (defail t) == infer_fail n t.
+Proof.
+  revert n.
+  induction t; simpl; intro m; try reflexivity.
+  - rewrite IHt1, IHt2; reflexivity.
+  - rewrite 2!IHt; reflexivity.
+Qed.
+
+Lemma infer_mixed'_infer_f {A : Type} (t : tree A) (f : A -> Q) :
+  infer_mixed' (mixf f) (defail t) == infer_f f t.
+Proof.
+  revert f.
+  induction t; simpl; intro f; try reflexivity.
+  - rewrite IHt1, IHt2; reflexivity.
+  - rewrite infer_mixed'_infer_fail, IHt; reflexivity.
+Qed.
+
+Lemma infer_mixed_infer_f {A : Type} (t : tree A) (f : A -> Q) :
+  infer_mixed (mixf f) t ==
+  infer_f f t.
+Proof.
+  induction t; simpl; try reflexivity.
+  - rewrite IHt1, IHt2; reflexivity.
+  - rewrite IHt, infer_mixed_infer_fail; reflexivity.
+Qed.
+
+Lemma infer_mixed'_lbl_indicator {A B : Type}
+      (n : nat) (t : tree (nat + A)) (k : nat + A -> tree (nat + B)) :
+  (forall n, k (inl n) = Leaf (inl n)) ->
+  (forall x, infer_mixed' (lbl_indicator n) (k x) == 0) ->
+  infer_mixed' (fun x : nat + A => infer_mixed' (lbl_indicator n) (k x)) t ==
+  infer_mixed' (lbl_indicator n) t.
+Proof.
+  induction t; intros Hleaf H0.
+  - simpl; destruct a.
+    + rewrite Hleaf; reflexivity.
+    + rewrite H0; reflexivity.
+  - reflexivity.
+  - simpl; rewrite IHt1, IHt2; auto; reflexivity.
+  - simpl; rewrite IHt; auto; reflexivity.
+Qed.
+
+Lemma infer_mixed'_bind {A B : Type}
+      (f : (nat + B) -> Q) (t : tree (nat + A)) (k : (nat + A) -> tree (nat + B)) :
+  (forall n, k (inl n) = Leaf (inl n)) ->
+  (forall n x, bound_in n t -> infer_mixed' (lbl_indicator n) (k x) == 0) ->
+  (* (forall n x, bound_in n t -> ~ in_tree (inl n) (k x)) -> *)
+  infer_mixed' (infer_mixed' f ∘ k) t == infer_mixed' f (tree_bind t k).
+Proof.
+  unfold compose, tree_bind.
+  revert f k.
+  induction t; simpl; intros f k Hleaf H0; try reflexivity.
+  - rewrite <- IHt1, <- IHt2; try lra; auto;
+      intros n x Hbound; apply H0; solve [constructor; auto].
+  - rewrite IHt; auto.
+    + assert (H: infer_mixed' (lbl_indicator n) (join (fmap k t)) ==
+                 infer_mixed' (fun x => infer_mixed' (lbl_indicator n) (k x)) t).
+      { rewrite IHt; auto; try reflexivity;
+          intros m x Hbound; apply H0;
+            destruct (Nat.eqb_spec m n); subst; constructor; auto. }
+      rewrite H.
+      rewrite infer_mixed'_lbl_indicator; auto; try reflexivity.
+      intro x; apply H0; constructor.
+    + intros m x Hbound; apply H0;
+        destruct (Nat.eqb_spec m n); subst; constructor; auto.
+Qed.
+
+Definition mixed_bind {A B : Type}
+           (t : tree (nat + A)) (k : A -> tree (nat + B)) : tree (nat + B) :=
+  tree_bind t (fun x => match x with
+                     | inl n => Leaf (inl n)
+                     | inr a => k a
+                     end).
+
+(** Functions f and g are "disjoint". *)
+Definition disjoint {A : Type} (f g : A -> Q) :=
+  forall x, (0 < f x -> g x == 0) /\ (0 < g x -> f x == 0).
+
+Lemma infer_mixed_disjoint_le_1 {A : Type} (l : list (nat + A -> Q)) (t : tree A) :
+  wf_tree t ->
+  NoDup l ->
+  (forall f g, In f l -> In g l -> f <> g -> disjoint f g) ->
+  (forall f, In f l -> bounded f 1) ->
+  (forall lbl, bound_in lbl t -> forall f, In f l -> f (inl lbl) == 0) ->
+  sum_Q_list (map (fun f => infer_mixed f t) l) <= 1.
+Proof.
+  revert l.
+  induction t; simpl; intros l Hwf Hnodup Hdisjoint Hbounded Hboundin.
+  - induction l; simpl; try lra.
+    rename a0 into f.
+    destruct (Qlt_le_dec 0 (f (inr a))).
+    + assert (H: sum_Q_list (map (fun g => g (inr a)) l) == 0).
+      { clear IHl Hbounded.
+        induction l; simpl.
+        - reflexivity.
+        - rename a0 into g.
+          apply (Hdisjoint f g) in q.
+          + rewrite q. rewrite Qplus_0_l.
+            apply IHl.
+            * inversion Hnodup; subst.
+              inversion H2; subst.
+              constructor; auto.
+              intro HC; apply H1; right; auto.
+            * intros f' g' Hinf Hing Hneq.
+              apply Hdisjoint; auto.
+              -- destruct Hinf; subst.
+                 ++ left; auto.
+                 ++ right; right; auto.
+              -- destruct Hing; subst.
+                 ++ left; auto.
+                 ++ right; right; auto.
+            * intros ? Hbound. inversion Hbound.
+          + left; auto.
+          + right; left; auto.
+          + eapply nodup_not_equal; eauto. }
+      rewrite H, Qplus_0_r.
+      apply Hbounded; left; auto.
+    + cut (sum_Q_list (map (fun g => g (inr a)) l) <= 1).
+      { lra. }
+      apply IHl.
+      * inversion Hnodup; auto.
+      * intros g h Hing Hinh. apply Hdisjoint; right; auto.
+      * intros g Hin; apply Hbounded; right; auto.
+      * intros ? Hbound; inversion Hbound.
+  - induction l; simpl; try lra.
+    rename a into f.
+    destruct (Qlt_le_dec 0 (f (inl n))).
+    + assert (H: sum_Q_list (map (fun g => g (inl n)) l) == 0).
+      { clear IHl Hbounded.
+        induction l; simpl.
+        - reflexivity.
+        - rename a into g.
+          apply (Hdisjoint f g) in q.
+          + rewrite q. rewrite Qplus_0_l.
+            apply IHl.
+            * inversion Hnodup; subst.
+              inversion H2; subst.
+              constructor; auto.
+              intro HC; apply H1; right; auto.
+            * intros f' g' Hinf Hing Hneq.
+              apply Hdisjoint; auto.
+              -- destruct Hinf; subst.
+                 ++ left; auto.
+                 ++ right; right; auto.
+              -- destruct Hing; subst.
+                 ++ left; auto.
+                 ++ right; right; auto.
+            * intros ? Hbound; inversion Hbound.
+          + left; auto.
+          + right; left; auto.
+          + eapply nodup_not_equal; eauto. }
+      rewrite H, Qplus_0_r.
+      apply Hbounded; left; auto.
+    + cut (sum_Q_list (map (fun g => g (inl n)) l) <= 1).
+      { lra. }
+      apply IHl.
+      * inversion Hnodup; auto.
+      * intros g h Hing Hinh. apply Hdisjoint; right; auto.
+      * intros g Hin; apply Hbounded; right; auto.
+      * intros ? Hbound; inversion Hbound.
+  - rewrite sum_Q_list_map_plus.
+    rewrite 2!sum_Q_list_map_mult_scalar.
+    inversion Hwf; subst.
+    assert (Hboundin1: forall lbl, bound_in lbl t1 ->
+                              forall f, In f l -> f (inl lbl) == 0).
+    { intros lbl Hbound f Hin.
+      apply Hboundin; auto; constructor; auto. }
+    assert (Hboundin2: forall lbl, bound_in lbl t2 ->
+                              forall f, In f l -> f (inl lbl) == 0).
+    { intros lbl Hbound f Hin.
+      apply Hboundin; auto; solve [constructor; auto]. }
+    specialize (IHt1 l H3 Hnodup Hdisjoint Hbounded Hboundin1).
+    specialize (IHt2 l H4 Hnodup Hdisjoint Hbounded Hboundin2).
+    nra.
+  - destruct (Qeq_dec (infer_mixed (lbl_indicator n) t) 1).
+    + apply Qle_trans with 0; try lra.
+      rewrite <- sum_Q_list_map_const_0 with (l0:=l).
+      apply Qle_lteq; right.
+      eapply sum_Q_list_proper.
+      intro g; rewrite q, Qminus_cancel, Qdiv_0_den; reflexivity.
+    + assert (infer_mixed (lbl_indicator n) t <= 1).
+      { inversion Hwf; subst.
+        rewrite infer_mixed_infer_fail; apply infer_fail_le_1; auto. }
+      rewrite sum_Q_list_map_div_scalar; try lra.
+      apply ratio_Qle_sum; try lra.
+      rewrite Qmult_1_r.
+      inversion Hwf; subst.
+      cut (sum_Q_list (map (fun g => infer_mixed g t) (lbl_indicator n :: l)) <= 1).
+      { simpl; lra. }
+      apply IHt; auto.
+      * constructor; auto.
+        assert (Hbound: bound_in n (Fix n t)).
+        { constructor. }
+        intro Hin.
+        apply Hboundin with (f:=lbl_indicator n) in Hbound; auto.
+        unfold lbl_indicator in Hbound; rewrite Nat.eqb_refl in Hbound; lra.
+      * intros g h Hing Hinh Hneq.
+        assert (forall g, In g l -> disjoint (lbl_indicator n) g).
+        { intros g' Hin' x. split; intro Hlt.
+          - unfold lbl_indicator in Hlt; destruct x; try lra.
+            + destruct (Nat.eqb_spec n1 n); subst.
+              * apply Hboundin; auto; constructor.
+              * lra.
+          - destruct x.
+            + assert (Hneq': n1 <> n).
+              { intro HC; subst.
+                apply Hboundin with (lbl:=n) in Hin'; try lra; constructor. }
+              unfold lbl_indicator.
+              apply Nat.eqb_neq in Hneq'; rewrite Hneq'; lra.
+            + unfold lbl_indicator; lra. }
+        destruct Hing; subst; destruct Hinh; subst.
+        ++ congruence.
+        ++ apply H0; auto.
+        ++ intro x. apply and_comm. apply H0; auto.
+        ++ apply Hdisjoint; auto.
+      * intros g Hin.
+        destruct Hin; subst.
+        ++ intros []; simpl; try lra.
+           destruct (Nat.eqb_spec n1 n); subst; lra.
+        ++ apply Hbounded; auto.
+      * intros lbl Hbound g Hin.
+        destruct (Nat.eqb_spec lbl n); subst.
+        -- apply bound_in_not_bound_in in H3; congruence.
+        -- destruct Hin; subst.
+           ++ unfold lbl_indicator.
+              apply Nat.eqb_neq in n1; rewrite n1; reflexivity.
+           ++ apply Hboundin; auto; constructor; auto.
+Qed.
+
+Lemma infer_f_bounded {A : Type} (t : tree A) (f : A -> Q) :
+  wf_tree t ->
+  bounded f 1 ->
+  infer_f f t <= 1.
+Proof.
+  intros Hwf Hbounded.
+  rewrite <- infer_mixed_infer_f.
+  assert (H: infer_mixed (mixf f) t ==
+             sum_Q_list (map (fun h => infer_mixed h t) [mixf f])).
+  { simpl; rewrite Qplus_0_r; reflexivity. }
+  rewrite H; clear H.
+  apply infer_mixed_disjoint_le_1; auto.
+  - constructor; intuition; constructor.
+  - intros h k Hinh Hink Hneq.
+    inversion Hinh; inversion Hink; subst.
+    + congruence.
+    + inversion H0.
+    + inversion H.
+    + inversion H.
+  - intros h Hin x; inversion Hin; subst.
+    + destruct x; simpl; auto; unfold const; lra.
+    + inversion H.
+  - intros lbl Hbound h Hin.
+    destruct Hin; subst; simpl; unfold const; try lra; inversion H.
+Qed.
+
+Lemma infer_f_scalar {A : Type} (f : A -> Q) (t : tree A) (a : Q) :
+  infer_f (fun x => a * f x) t == a * infer_f f t.
+Proof.
+  induction t; simpl; try lra.
+  - rewrite IHt1, IHt2; lra.
+  - rewrite IHt.
+    destruct (Qeq_dec (infer_fail n t) 1); subst.
+    + rewrite q, Qminus_cancel, 2!Qdiv_0_den; lra.
+    + field; lra.
+Qed.
+
+(** infer_f preserves [const 0]. *)
+Lemma infer_f_const_0 {A : Type} (t : tree A) :
+  infer_f (const 0) t == 0.
+Proof.
+  induction t; simpl; unfold const; try reflexivity.
+  - rewrite IHt1, IHt2; lra.
+  - rewrite IHt; reflexivity.
+Qed.
+
+(** General upper bound. *)
+Lemma infer_f_bounded' {A : Type} (f : A -> Q) (t : tree A) (b : Q) :
+  0 <= b ->
+  wf_tree t ->
+  bounded_expectation f b ->
+  infer_f f t <= b.
+Proof.
+  intros Hle Hwf Hboundedexp.
+  set (g := fun x => f x / b).
+  destruct (Qeq_dec b 0).
+  - assert (infer_f f t == 0).
+    { rewrite <- infer_f_const_0 with (t0:=t).
+      apply Proper_infer_f; auto.
+      intro x; unfold const; destruct (Hboundedexp x); lra. }
+    lra.
+  - assert (Hg: bounded g 1).
+    { intro x. unfold g.
+      destruct (Hboundedexp x).
+      apply Qle_shift_div_r; lra. }
+    assert (infer_f f t == infer_f (fun x => b * (f x / b)) t).
+    { apply Proper_infer_f; auto.
+      intro x; field; auto. }
+    rewrite H.
+    rewrite infer_f_scalar.
+    assert (infer_f g t <= 1).
+    { apply infer_f_bounded; auto. }
+    unfold g in H0. nra.
+Qed.

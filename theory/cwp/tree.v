@@ -7,6 +7,7 @@ Require Import Coq.QArith.QArith.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
 Require Import ExtLib.Structures.Monad.
+Require Import Permutation.
 Import ListNotations.
 
 Require Import misc.
@@ -1073,3 +1074,353 @@ Inductive no_fail {A : Type} : tree A -> Prop :=
 | no_fail_fix : forall n t,
     no_fail t ->
     no_fail (Fix n t).
+
+Fixpoint heightb {A : Type} (t : tree A) : nat :=
+  match t with
+  | Choice _ t1 t2 => 1 + max (heightb t1) (heightb t2)
+  | Fix _ t => 1 + heightb t
+  | _ => 0
+  end.
+
+Inductive height {A : Type} : tree A -> nat -> Prop :=
+| height_leaf : forall x, height (Leaf x) 0
+| height_fail : forall n, height (Fail _ n) 0
+| height_choice : forall p t1 t2 n m,
+    height t1 n ->
+    height t2 m ->
+    height (Choice p t1 t2) (S (max n m))
+| height_fix : forall l n t,
+    height t n ->
+    height (Fix l t) (S n).
+
+Lemma heightb_spec {A : Type} (t : tree A) :
+  height t (heightb t).
+Proof.
+  induction t; simpl; constructor; auto.
+Qed.
+
+Inductive congruent {A B : Type} : tree A -> tree B -> Prop :=
+| congruent_leaf_leaf : forall x y, congruent (Leaf x) (Leaf y)
+| congruent_leaf_fail : forall x n, congruent (Leaf x) (Fail _ n)
+| congruent_fail_leaf : forall y n, congruent (Fail _ n) (Leaf y)
+| congruent_fail_fail : forall n m, congruent (Fail _ n) (Fail _ m)
+| congruent_choice : forall p q t1 t1' t2 t2',
+    congruent t1 t1' -> congruent t2 t2' ->
+    congruent (Choice p t1 t2) (Choice q t1' t2')
+| congruence_fix : forall n m t1 t2,
+    congruent t1 t2 ->
+    congruent (Fix n t1) (Fix m t2).
+
+Instance Reflexive_congruent {A : Type} : Reflexive (@congruent A A).
+Proof. intro t. induction t; constructor; auto. Qed.
+
+Lemma congruent_symm {A B : Type} (t1 : tree A) (t2 : tree B) :
+  congruent t1 t2 -> congruent t2 t1.
+Proof. intro H; induction H; constructor; auto. Qed.
+
+Lemma congruent_trans {A B C : Type}
+      (t1 : tree A) (t2 : tree B) (t3 : tree C) :
+  congruent t1 t2 -> congruent t2 t3 -> congruent t1 t3.
+Proof.
+  revert t3 t1; induction t2; intros t1 t3 H0 H1;
+    inversion H0; inversion H1; subst; constructor; auto.
+Qed.
+
+(** Stronger notion of congruence (leaves and fails not congruent) *)
+Inductive congruent' {A B : Type} : tree A -> tree B -> Prop :=
+| congruent'_leaf_leaf : forall x y, congruent' (Leaf x) (Leaf y)
+| congruent'_fail_fail : forall n m, congruent' (Fail _ n) (Fail _ m)
+| congruent'_choice : forall p q t1 t1' t2 t2',
+    congruent' t1 t1' -> congruent' t2 t2' ->
+    congruent' (Choice p t1 t2) (Choice q t1' t2')
+| congruence'_fix : forall n m t1 t2,
+    congruent' t1 t2 ->
+    congruent' (Fix n t1) (Fix m t2).
+
+Instance Reflexive_congruent' {A : Type} : Reflexive (@congruent' A A).
+Proof. intro t. induction t; constructor; auto. Qed.
+
+Lemma congruent'_symm {A B : Type} (t1 : tree A) (t2 : tree B) :
+  congruent' t1 t2 -> congruent' t2 t1.
+Proof. intro H; induction H; constructor; auto. Qed.
+
+Lemma congruent'_trans {A B C : Type}
+      (t1 : tree A) (t2 : tree B) (t3 : tree C) :
+  congruent' t1 t2 -> congruent' t2 t3 -> congruent' t1 t3.
+Proof.
+  revert t3 t1; induction t2; intros t1 t3 H0 H1;
+    inversion H0; inversion H1; subst; constructor; auto.
+Qed.
+
+Inductive perfect {A : Type} : tree A -> Prop :=
+| perfect_leaf : forall x, perfect (Leaf x)
+| perfect_fail : forall n, perfect (Fail _ n)
+| perfect_choice : forall p t1 t2,
+    congruent t1 t2 ->
+    perfect t1 -> perfect t2 ->
+    perfect (Choice p t1 t2).  
+
+Lemma perfect_not_fix {A : Type} (t t1: tree A) (n : nat) :
+  perfect t ->
+  t <> Fix n t1.
+Proof. induction 1; congruence. Qed.
+
+Lemma congruent_perfect {A B : Type} (t1 : tree A) (t2 : tree B) :
+  congruent t1 t2 -> perfect t1 -> perfect t2.
+Proof.
+  intro H. induction H; intros; try solve [constructor].
+  - inversion H1; subst. constructor; auto.
+    apply congruent_symm in H.
+    eapply congruent_trans; eauto.
+    eapply congruent_trans; eauto.
+  - inversion H0.
+Qed.
+
+Fixpoint countb {A : Type} (f : A -> bool) (t : tree A) : nat :=
+  match t with
+  | Leaf x => if f x then 1 else 0
+  | Fail _ _ => 0
+  | Choice _ t1 t2 => countb f t1 + countb f t2
+  | Fix _ t1 => countb f t1
+  end.
+
+Inductive count {A : Type} (f : A -> bool) : tree A -> nat -> Prop :=
+| count_leaf0 : forall x, f x = false -> count f (Leaf x) 0
+| count_leaf1 : forall x, f x = true -> count f (Leaf x) 1
+| count_fail : forall n, count f (Fail _ n) 0
+| count_choice : forall p t1 t2 n m,
+    count f t1 n -> count f t2 m ->
+    count f (Choice p t1 t2) (n + m)
+| count_fix : forall l t1 n,
+    count f t1 n ->
+    count f (Fix l t1) n.
+
+Lemma countb_spec {A : Type} (f : A -> bool) (t : tree A) :
+  count f t (countb f t).
+Proof.
+  induction t; simpl; try solve [constructor; auto].
+  destruct (f a) eqn:H; constructor; congruence.
+Qed.
+
+Fixpoint countb_list {A : Type} (f : A -> bool) (l : list A) : nat :=
+  match l with
+  | [] => 0
+  | x :: xs => (if f x then 1 else 0) + countb_list f xs
+  end.
+
+Fixpoint count_failb {A : Type} (lbl : nat) (t : tree A) : nat :=
+  match t with
+  | Leaf x => 0
+  | Fail _ n => if n =? lbl then 1 else 0
+  | Choice _ t1 t2 => count_failb lbl t1 + count_failb lbl t2
+  | Fix _ t1 => count_failb lbl t1
+  end.
+
+Fixpoint terminals {A : Type} (t : tree A) : nat :=
+  match t with
+  | Leaf _ => 1
+  | Fail _ _ => 1
+  | Choice _ t1 t2 => terminals t1 + terminals t2
+  | Fix _ t1 => terminals t1
+  end.
+
+Lemma terminals_nonzero {A : Type} (t : tree A) :
+  (0 < terminals t)%nat.
+Proof. induction t; simpl; lia. Qed.
+
+Lemma perfect_congruent_terminals {A B : Type} (t1 : tree A) (t2 : tree B) :
+  perfect t1 -> perfect t2 ->
+  congruent t1 t2 ->
+  terminals t1 = terminals t2.
+Proof.
+  revert t2.
+  induction t1; intros t2 H0 H1 H2; inversion H2; subst; auto.
+  - inversion H0; subst; inversion H1; subst; simpl; auto.
+  - inversion H1.
+Qed.
+
+Lemma congruent_heightb {A B : Type} (t1 : tree A) (t2 : tree B) :
+  congruent t1 t2 ->
+  heightb t1 = heightb t2.
+Proof. intro H; induction H; auto; simpl; auto. Qed.
+
+Lemma perfect_height_congruent {A B : Type} (t1 : tree A) (t2 : tree B) :
+  perfect t1 -> perfect t2 ->
+  heightb t1 = heightb t2 ->
+  congruent t1 t2.
+Proof.
+  revert t2; induction t1; intros t2 Hp1 Hp2 Hh.
+  - destruct t2; try constructor; inversion Hh.
+  - destruct t2; try constructor; inversion Hh.
+  - destruct t2.
+    + inversion Hh.
+    + inversion Hh.
+    + simpl in *.
+      inversion Hp1. inversion Hp2. subst.
+      apply congruent_heightb in H2.
+      apply congruent_heightb in H8.
+      rewrite H2, H8 in *.
+      rewrite 2!Nat.max_id in *.
+      inversion Hh.
+      constructor.
+      * apply IHt1_1; auto; lia.
+      * apply IHt1_2; auto; lia.
+    + inversion Hp2.
+  - inversion Hp1.
+Qed.
+
+Lemma countb_list_app {A : Type} (f : A -> bool) (l1 l2 : list A) :
+  countb_list f (l1 ++ l2) = (countb_list f l1 + countb_list f l2)%nat.
+Proof. induction l1; auto; simpl; rewrite IHl1; lia. Qed.
+
+Lemma count_true_n (n : nat) :
+  countb_list id (repeat true n) = n.
+Proof. induction n; simpl; auto. Qed.
+
+Lemma count_false_0 (n : nat) :
+  countb_list id (repeat false n) = O.
+Proof. induction n; simpl; auto. Qed.
+
+Inductive all_fails {A : Type} : nat -> tree A -> Prop :=
+| all_fails_leaf : forall lbl x, all_fails lbl (Leaf x)
+| all_fails_fail : forall lbl m,
+    lbl = m ->
+    all_fails lbl (Fail _ m)
+| all_fails_choice : forall lbl p t1 t2,
+    all_fails lbl t1 ->
+    all_fails lbl t2 ->
+    all_fails lbl (Choice p t1 t2)
+| all_fails_fix : forall lbl m t,
+    all_fails lbl t ->
+    all_fails lbl (Fix m t).
+
+Lemma countb_le_terminals {A : Type} (f : A -> bool) (t : tree A) :
+  (countb f t <= terminals t)%nat.
+Proof. induction t; simpl; try destruct (f a); lia. Qed.
+
+Lemma all_fails_count_failb {A : Type} `{EqType A} (lbl : nat) (t : tree A) :
+  all_fails lbl t ->
+  count_failb lbl t = (terminals t - countb (const true) t)%nat.
+Proof.
+  induction 1; simpl; subst; auto.
+  - rewrite Nat.eqb_refl; reflexivity.
+  - assert (countb (const true) t1 <= terminals t1)%nat.
+    { apply countb_le_terminals. }
+    assert (countb (const true) t2 <= terminals t2)%nat.
+    { apply countb_le_terminals. }
+    lia.
+Qed.
+
+Lemma terminals_lt_choice {A : Type} (p : Q) (t1 t2 : tree A) :
+  (terminals t1 < terminals (Choice p t1 t2))%nat.
+Proof. generalize (terminals_nonzero t2); simpl; lia. Qed.
+
+Lemma in_tree_length_le_terminals {A : Type} (l : list A) (t : tree A) :
+  (forall x, In x l -> in_tree x t) ->
+  NoDup l ->
+  (length l <= terminals t)%nat.
+Proof.
+  revert l.
+  induction t; simpl; intros l Hin Hnodup.
+  - destruct l; simpl; try lia.
+    destruct l; simpl; try lia.
+    pose proof (Hin a0 (or_introl eq_refl)) as H.
+    pose proof (Hin a1 (or_intror (or_introl eq_refl))) as H'.
+    inversion H; subst. inversion H'; subst.
+    inversion Hnodup; subst.
+    exfalso; apply H2; left; auto.
+  - destruct l; simpl; try lia.
+    specialize (Hin a (or_introl eq_refl)).
+    inversion Hin.
+  - assert (H: exists l1 l2, Permutation l (l1 ++ l2) /\
+                        (forall x, In x l1 -> in_tree x t1) /\
+                        (forall x, In x l2 -> in_tree x t2)).
+    { clear IHt1 IHt2 Hnodup.
+      induction l; simpl in *.
+      - exists [], []. simpl. split.
+        + constructor.
+        + split; intuition.
+      - assert (H: forall x, In x l -> in_tree x (Choice q t1 t2)).
+        { intros x Hin'; apply Hin; right; auto. }
+        specialize (IHl H).
+        destruct IHl as (l1 & l2 & H0 & H1 & H2).
+        assert (in_tree a t1 \/ in_tree a t2).
+        { specialize (Hin a (or_introl (eq_refl))).
+          inversion Hin; subst; intuition. }
+        destruct H3.
+        + exists (a :: l1), l2; simpl; intuition; subst; auto.
+        + exists l1, (a :: l2); simpl; intuition; subst; auto.
+          rewrite Permutation_app_comm; simpl.
+          constructor; rewrite Permutation_app_comm; auto. }
+    destruct H as (l1 & l2 & H0 & H1 & H2).
+    assert (Hnodup1: NoDup l1).
+    { apply Permutation_NoDup in H0; auto.
+      eapply NoDup_app; eauto. }
+    assert (Hnodup2: NoDup l2).
+    { apply Permutation_NoDup in H0; auto.
+      eapply NoDup_app; eauto.
+      apply NoDup_app_comm; eauto. }
+    apply Permutation_length in H0. rewrite H0; clear H0.
+    rewrite app_length.
+    specialize (IHt1 l1 H1 Hnodup1).
+    specialize (IHt2 l2 H2 Hnodup2).
+    lia.
+  - apply IHt in Hnodup; auto.
+    intros x Hin'; apply Hin in Hin'; inversion Hin'; auto.
+Qed.
+
+Lemma fmap_congruent' {A B : Type} (f : A -> B) (t : tree A) :
+  congruent' t (fmap f t).
+Proof. induction t; constructor; auto. Qed.
+
+Lemma heightb_fmap {A B : Type} (f : A -> B) (t : tree A) :
+  heightb (fmap f t) = heightb t.
+Proof. induction t; simpl; auto. Qed.
+
+Lemma congruent'_no_fail {A B : Type} (t1 : tree A) (t2 : tree B) :
+  no_fail t1 ->
+  congruent' t1 t2 ->
+  no_fail t2.
+Proof.
+  intro Hnf. induction 1; simpl; inversion Hnf; subst; constructor; auto.
+Qed.
+
+Lemma fmap_terminals {A B : Type} (t : tree A) (f : A -> B) :
+  terminals (fmap f t) = terminals t.
+Proof. induction t; simpl; lia. Qed.
+
+Lemma no_fix_no_nested_fix {A : Type} (t : tree A) :
+  no_fix t ->
+  no_nested_fix t.
+Proof. induction 1; constructor; auto. Qed.
+
+Lemma in_tree_tree_eq {A : Type} `{EqType A} (x : A) (t1 t2 : tree A) :
+  tree_eq t1 t2 ->
+  in_tree x t1 ->
+  in_tree x t2.
+Proof.
+  induction 1; intro Heq; auto;
+    inversion Heq; subst; solve [constructor; auto].
+Qed.
+
+Lemma not_in_tree_bind {A B : Type} (t : tree A) (k : A -> tree B) (lbl : nat) :
+  not_in lbl t ->
+  (forall x, not_in lbl (k x)) ->
+  not_in lbl (tree_bind t k).
+Proof.
+  unfold tree_bind; induction t; simpl; intros Ht Hk; auto;
+    inversion Ht; subst; constructor; auto.
+Qed.
+
+Lemma unbiased_tree_bind {A B : Type} (t : tree A) (k : A -> tree B) :
+  unbiased t ->
+  (forall x, unbiased (k x)) ->
+  unbiased (tree_bind t k).
+Proof.
+  unfold tree_bind; induction t; simpl; intros Ht Hk;
+    auto; inversion Ht; subst; constructor; auto.
+Qed.
+
+Lemma fold_tree_bind {A B : Type} (t : tree A) (k : A -> tree B) :
+  join (fmap k t) = tree_bind t k.
+Proof. reflexivity. Qed.
