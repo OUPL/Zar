@@ -350,8 +350,8 @@ Lemma wf_unroll c e i :
   wf_cpGCL (unroll e c i).
 Proof. induction i; repeat constructor; auto. Qed.
 
-(** wpf is monotone. That is, [∀ f g, f <= g -> wpf c f <= wpf c g] for
-  any command c. *)
+(** wpf is monotone. That is, [∀ f g, f <= g -> wpf c f <= wpf c g]
+  for any command c. *)
 Lemma wpf_monotone c :
   wf_cpGCL c ->
   monotone (wpf c).
@@ -383,7 +383,7 @@ Proof.
   - destruct (e x); auto; lra.
 Qed.
 
-(** Similar to [wlpf_monotone]. *)
+(** Similar to [wpf_monotone]. *)
 Lemma wlpf_monotone c :
   wf_cpGCL c ->
   monotone (wlpf c).

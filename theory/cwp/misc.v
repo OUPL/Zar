@@ -9,6 +9,15 @@ Import ListNotations.
 
 Require Import order.
 
+Definition tuple (A B C : Type) (f : A -> B) (g : A -> C) (x : A) : B*C :=
+  (f x, g x).
+
+Definition cotuple {A B C : Type} (f : A -> C) (g : B -> C) (x : A + B) : C :=
+  match x with
+  | inl a => f a
+  | inr b => g b
+  end.
+
 Definition list_max (l : list nat) : nat := fold_right max O l.
 
 Lemma list_max_spec (l : list nat) (x : nat) :

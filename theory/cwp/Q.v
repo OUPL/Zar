@@ -7,12 +7,16 @@ Require Import Coq.QArith.QArith.
 Require Import Coq.QArith.Qabs.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
+Local Open Scope program_scope.
 
 
 (** Definitions *)
 
 Definition sum_Q_list (l : list Q) : Q :=
   fold_right Qplus 0 l.
+
+Definition sum_Q_list' (l : list Q) : Q :=
+  fold_right (compose Qred ∘ Qplus) 0 l.
 
 Fixpoint Qpow (x : Q) (n : nat) :=
   match n with
@@ -397,3 +401,8 @@ Proof.
   rewrite Z.mul_1_r.
   rewrite Z_pos_of_nat; auto.
 Qed.
+
+Lemma Q_neq_0 (z : Z) :
+  z <> Z0 ->
+  ~ (z # 1) == 0.
+Proof. intros Hz HC; inversion HC; lia. Qed.

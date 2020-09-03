@@ -1,5 +1,6 @@
 -R . cwp
 
+axioms.v
 bernoulli.v
 compile.v
 cpGCL.v
@@ -10,6 +11,7 @@ cwpf_infer.v
 geometric.v
 infer.v
 itree.v
+measure.v
 misc.v
 order.v
 Q.v

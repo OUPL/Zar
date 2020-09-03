@@ -12,7 +12,6 @@ Import ListNotations.
 Local Open Scope program_scope.
 
 Require Import cpGCL.
-Require Import geometric.
 Require Import misc.
 Require Import order.
 Require Import Q.
@@ -45,7 +44,7 @@ Fixpoint infer_f {A : Type} (f : A -> Q) (t : tree A) : Q :=
   end.
 
 (** The same as infer_f except in the case of divergent loops (choose
-  the value 1 instead of 0). *)
+    the value 1 instead of 0). *)
 Fixpoint infer_f_lib {A : Type} (f : A -> Q) (t : tree A) : Q :=
   match t with
   | Leaf x => f x
@@ -58,7 +57,7 @@ Fixpoint infer_f_lib {A : Type} (f : A -> Q) (t : tree A) : Q :=
   end.
 
 (** Compute the expected value of f normalized wrt observation
-  failure. *)
+    failure. *)
 Definition infer {A : Type} (f : A -> Q) (t : tree A) : Q :=
   let a := infer_f f t in
   let b := infer_f_lib (const 1) t in
@@ -998,12 +997,6 @@ Definition lbl_indicator {A : Type} (n : nat) (x : nat + A) : Q :=
   | inr _ => 0
   end.
 
-Definition cotuple {A B C : Type} (f : A -> C) (g : B -> C) (x : A + B) : C :=
-  match x with
-  | inl a => f a
-  | inr b => g b
-  end.
-
 Definition mixf {A B : Type} : (B -> Q) -> A + B -> Q :=
   cotuple (const 0).
 
@@ -1354,3 +1347,36 @@ Proof.
     { apply infer_f_bounded; auto. }
     unfold g in H0. nra.
 Qed.
+
+Lemma tree_eq_infer_fail {A : Type} (t1 t2 : tree A) (n : nat) :
+  tree_eq t1 t2 ->
+  infer_fail n t1 == infer_fail n t2.
+Proof.
+  intro Heq. revert n.
+  induction Heq; simpl; intro n; try lra.
+  - rewrite H, IHHeq1, IHHeq2; reflexivity.
+  - rewrite 2!IHHeq; reflexivity.
+Qed.
+
+Lemma tree_eq_infer_f {A : Type} (t1 t2 : tree A) (f : A -> Q) :
+  tree_eq t1 t2 ->
+  infer_f f t1 == infer_f f t2.
+Proof.
+  induction 1; simpl; try lra.
+  - rewrite H, IHtree_eq1, IHtree_eq2; reflexivity.
+  - rewrite IHtree_eq, tree_eq_infer_fail; eauto; reflexivity.
+Qed.
+
+Lemma tree_reduce_infer_f {A : Type} `{EqType A} (t : tree A) (f : A -> Q) :
+  wf_tree t ->
+  infer_f f t == infer_f f (reduce_tree t).
+Proof.
+  intro Hwf; induction t; simpl; try lra; inversion Hwf; subst.
+  - destruct (Qeq_bool q (1#2)); simpl.
+    + destruct (tree_eqb_spec (reduce_tree t1) (reduce_tree t2)).
+      * rewrite IHt1, IHt2; auto.
+        rewrite tree_eq_infer_f; eauto; lra.
+      * simpl; rewrite IHt1, IHt2; auto; reflexivity.
+    + rewrite IHt1, IHt2; auto; reflexivity.
+  - admit. (* TODO *)
+Admitted.

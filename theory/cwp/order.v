@@ -61,8 +61,9 @@ Class PType (A : Type) `{o : OType A} : Type :=
 Program Instance OType_arrow A B {oB : OType B} : OType (A -> B) :=
   {| leq := fun f g => forall x, leq (f x) (g x) |}.
 Next Obligation.
-  constructor. firstorder.
-  intros ?; etransitivity; eauto.
+  constructor.
+  - intros f x; reflexivity.
+  - intros ?; etransitivity; eauto.
 Qed.
 
 Program Instance OType_nat : OType nat := {| leq := Nat.le |}.

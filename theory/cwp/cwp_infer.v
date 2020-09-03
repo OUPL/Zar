@@ -20,7 +20,7 @@ Require Import Q.
 Require Import tree.
 
 (** Unnormalized inference after compilation computes the weakest
-  pre-expectation according to [wp]. *)
+    pre-expectation according to [wp]. *)
 Lemma wp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->
@@ -34,7 +34,7 @@ Proof.
 Qed.
 
 (** Unnormalized liberal inference after compilation computes the
-  weakest liberal pre-expectation according to [wlp]. *)
+    weakest liberal pre-expectation according to [wlp]. *)
 Lemma wlp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->
@@ -48,7 +48,7 @@ Proof.
 Qed.
 
 (** Normalized inference after compilation computes the conditional
-  weakest pre-expectation according to [cwp]. *)
+    weakest pre-expectation according to [cwp]. *)
 Theorem cwp_infer (c : cpGCL) (f : St -> Q) (n : nat) :
   wf_cpGCL c ->
   iid_cpGCL c ->

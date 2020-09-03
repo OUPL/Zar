@@ -1424,3 +1424,16 @@ Qed.
 Lemma fold_tree_bind {A B : Type} (t : tree A) (k : A -> tree B) :
   join (fmap k t) = tree_bind t k.
 Proof. reflexivity. Qed.
+
+
+(** Tree reduction. *)
+
+Fixpoint reduce_tree {A : Type} `{EqType A} (t : tree A) : tree A :=
+  match t with
+  | Choice p t1 t2 =>
+    let t1' := reduce_tree t1 in
+    let t2' := reduce_tree t2 in
+    if Qeq_bool p (1#2) && tree_eqb t1' t2' then t1' else Choice p t1' t2'
+  | Fix n t1 => Fix n (reduce_tree t1)
+  | _ => t
+  end.
