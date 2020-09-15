@@ -11,6 +11,8 @@ Require Import ExtLib.Structures.Monad.
 Import ListNotations.
 Local Open Scope program_scope.
 
+Require Import axioms.
+Require Import borel.
 Require Import cpGCL.
 Require Import misc.
 Require Import order.
@@ -1367,16 +1369,326 @@ Proof.
   - rewrite IHtree_eq, tree_eq_infer_fail; eauto; reflexivity.
 Qed.
 
-Lemma tree_reduce_infer_f {A : Type} `{EqType A} (t : tree A) (f : A -> Q) :
-  wf_tree t ->
-  infer_f f t == infer_f f (reduce_tree t).
+(* Lemma tree_reduce_infer_f {A : Type} `{EqType A} (t : tree A) (f : A -> Q) : *)
+(*   wf_tree t -> *)
+(*   infer_f f t == infer_f f (reduce_tree t). *)
+(* Proof. *)
+(*   intro Hwf; induction t; simpl; try lra; inversion Hwf; subst. *)
+(*   - destruct (Qeq_bool q (1#2)); simpl. *)
+(*     + destruct (tree_eqb_spec (reduce_tree t1) (reduce_tree t2)). *)
+(*       * rewrite IHt1, IHt2; auto. *)
+(*         rewrite tree_eq_infer_f; eauto; lra. *)
+(*       * simpl; rewrite IHt1, IHt2; auto; reflexivity. *)
+(*     + rewrite IHt1, IHt2; auto; reflexivity. *)
+(*   - admit. (* TODO *) *)
+(* Admitted. *)
+
+
+Definition option_measure (o : option (list bool)) : Q :=
+  match o with
+  | None => 0
+  | Some bs => interval_measure bs
+  end.
+
+Lemma partial_sum_S (f : nat -> Q) (i : nat) :
+  partial_sum f (S i) == partial_sum f i + f (S i).
 Proof.
-  intro Hwf; induction t; simpl; try lra; inversion Hwf; subst.
-  - destruct (Qeq_bool q (1#2)); simpl.
-    + destruct (tree_eqb_spec (reduce_tree t1) (reduce_tree t2)).
-      * rewrite IHt1, IHt2; auto.
-        rewrite tree_eq_infer_f; eauto; lra.
-      * simpl; rewrite IHt1, IHt2; auto; reflexivity.
-    + rewrite IHt1, IHt2; auto; reflexivity.
-  - admit. (* TODO *)
+  induction i.
+  - unfold partial_sum. simpl. lra.
+  - rewrite IHi.
+    unfold partial_sum.
+    simpl.
+    rewrite sum_Q_list_app. rewrite sum_Q_list_app. rewrite sum_Q_list_app.
+    simpl. lra.
+Qed.
+
+Lemma partial_sum_const (x : Q) (i : nat) :
+  partial_sum (fun _ => x) i == x + sum_Q_list (repeat x i).
+Proof.
+  induction i; simpl.
+  - reflexivity.
+  - rewrite partial_sum_S; lra.
+Qed.
+
+Lemma partial_sum_singleton (f : nat -> Q) (n : nat) :
+  (forall i, (0 < i)%nat -> f i == 0) ->
+  partial_sum f n == f O.
+Proof.
+  intros Hf; induction n.
+  - unfold partial_sum; simpl; lra.
+  - rewrite partial_sum_S, IHn.
+    cut (f (S n) == 0). lra. apply Hf; lia.
+Qed.
+
+Lemma singleton_seq_none {A : Type} (x : A) (i : nat) :
+  (0 < i)%nat ->
+  singleton_seq x i = None.
+Proof. intro Hlt; destruct i; try lia; reflexivity. Qed.
+
+Lemma partial_sum_union (f g : nat -> Q) (i : nat) :
+  partial_sum (seq_union f g) (i+i+1) == partial_sum f i + partial_sum g i.
+Proof.
+  induction i.
+  - unfold partial_sum, seq_union; simpl; lra.
+  - simpl.
+    replace (S (i + S i + 1)) with (S (S (i + i + 1))) by lia.
+    rewrite 4!partial_sum_S.
+    rewrite IHi; clear IHi.
+    cut (seq_union f g (S (i+i+1)) + seq_union f g (S (S (i+i+1))) == f (S i) + g (S i)).
+    + lra.
+    + unfold seq_union.
+      replace (S (i + i + 1)) with (S i * 2)%nat by lia.
+      replace (S (S i * 2)) with (1 + S i * 2)%nat by lia.
+      rewrite Nat.mod_mul; auto.
+      rewrite Nat.mod_add; auto.
+      replace ((S i * 2) / 2)%nat with (S i).
+      * replace ((1 + S i * 2) / 2)%nat with (S i).
+        -- reflexivity.
+        -- rewrite Nat.div_add; auto.
+      * rewrite Nat.div_mul; auto.
+Qed.
+
+Definition crunch (f : nat -> Q) (i : nat) : Q := f (i+i)%nat + f (S (i+i)).
+
+Lemma partial_sum_crunch (f : nat -> Q) (i : nat) :
+  partial_sum (crunch f) i == partial_sum f (i+i+1).
+Proof.
+  unfold crunch. simpl.
+  induction i.
+  - unfold partial_sum; simpl; lra.
+  - replace (S i + S i + 1)%nat with (S (S (i + i + 1))) by lia.
+    rewrite 3!partial_sum_S, IHi.
+    replace (S i + S i)%nat with (S (S (i + i))) by lia.
+    replace (i + i + 1)%nat with (S (i + i)) by lia.
+    lra.
+Qed.
+
+Lemma partial_sum_le_S (f : nat -> Q) (i : nat) :
+  (forall j, 0 <= f j) ->
+  partial_sum f i <= partial_sum f (S i).
+Proof.
+  intro Hle; induction i.
+  - rewrite partial_sum_S.
+    specialize (Hle (S O)); lra.
+  - rewrite 3!partial_sum_S.
+    pose proof (Hle (S i)) as H0.
+    pose proof (Hle (S (S i))) as H1; lra.
+Qed.
+
+Lemma partial_sum_increasing (f : nat -> Q) (i j : nat) :
+  (forall k, 0 <= f k) ->
+  (i <= j)%nat ->
+  partial_sum f i <= partial_sum f j.
+Proof.
+  revert i; induction j; intros i Hpos Hle.
+  - inversion Hle; subst; lra.
+  - destruct (Nat.eqb_spec i (S j)); subst.
+    + lra.
+    + eapply Qle_trans.
+      apply IHj; auto; lia.
+      apply partial_sum_le_S; auto.
+Qed.
+
+Lemma partial_sum_le_crunch (f : nat -> Q) (i : nat) :
+  (forall j, 0 <= f j) ->
+  partial_sum f i <= partial_sum (crunch f) i.
+Proof.
+  intro Hle.
+  rewrite partial_sum_crunch.
+  apply partial_sum_increasing; auto; lia.
+Qed.
+
+Lemma crunch_partial_sum_supremum (f : nat -> Q) (sup : Q) :
+  (forall i, 0 <= f i) ->
+  supremum sup (partial_sum f) <-> supremum sup (partial_sum (crunch f)).
+Proof.
+  intro Hle; split; intros [Hub Hlub].
+  - split.
+    + intro y. specialize (Hub (y+y+1)%nat).
+      rewrite partial_sum_crunch; auto.
+    + intros y Hy.
+      specialize (Hlub y).
+      apply Hlub.
+      eapply ge_upper_bound; eauto.
+      intro i; apply partial_sum_le_crunch; auto.
+  - split.
+    + intro y. etransitivity; eauto.
+      apply partial_sum_le_crunch; auto.
+    + intros x Hx.
+      apply Hlub.
+      intro j. specialize (Hx (j+j+1)%nat).
+      rewrite partial_sum_crunch; auto.
+Qed.
+
+(** Addition on rationals is continuous. *)
+Lemma supremum_sum_Q (f g : nat -> Q) (supF supG : Q) :
+  chain f ->
+  chain g ->
+  supremum supF f ->
+  supremum supG g ->
+  supremum (supF + supG) (fun i => f i + g i).
+Proof.
+  intros Hchainf Hchaing [Hubf Hlubf] [Hubg Hlubg].
+  split.
+  - intro x.
+    specialize (Hubf x); specialize (Hubg x).
+    simpl in *; lra.
+  - intros x Hx; unfold upper_bound in Hx; simpl in *.
+    cut (supF <= x - supG).
+    { lra. }
+    apply Hlubf; intro i; simpl in *.
+    cut (supG <= x - f i).
+    { lra. }
+    apply Hlubg; intro j; simpl.
+    destruct (Nat.leb_spec i j).
+    + specialize (Hx j).
+      assert (f i <= f j).
+      { cut (leq (f i) (f j)). auto.
+        apply chain_leq; auto. }
+      lra.
+    + specialize (Hx i).
+      assert (g j <= g i).
+      { cut (leq (g j) (g i)). auto.
+        apply chain_leq; auto; lia. }
+      lra.
+Qed.
+
+Lemma partial_sum_linear (f g : nat -> Q) (i : nat) :
+  partial_sum (fun j => f j + g j) i == partial_sum f i + partial_sum g i.
+Proof.
+  induction i.
+  - unfold partial_sum; simpl; lra.
+  - rewrite 3!partial_sum_S, IHi; lra.
+Qed.
+
+Lemma partial_sum_scalar (f : nat -> Q) (c : Q) (i : nat) :
+  partial_sum (fun j => c * f j) i == c * partial_sum f i.
+Proof.
+  induction i.
+  - unfold partial_sum. simpl. lra.
+  - rewrite 2!partial_sum_S.
+    rewrite IHi. lra.
+Qed.
+
+Lemma supremum_scalar (f : nat -> Q) (c sup : Q):
+  (0 <= c) ->
+  supremum sup f -> supremum (c * sup) (fun i => c * f i).
+Proof.
+  intro Hpos.
+  destruct (Qeq_dec 0 c); intros [Hub Hlub]; split.
+  - intro i; simpl; rewrite <- q; lra.
+  - intros x Hx; simpl; specialize (Hx O); simpl in Hx; nra.
+  - intro x. specialize (Hub x). simpl in *. nra.
+  - intros x Hx; simpl in *.
+    cut (sup <= x / c).
+    { intro H.
+      assert (0 < c). lra.
+      apply Qle_Qdiv' with (c := c); auto.
+      assert (H': c * sup / c == sup).
+      { field; lra. }
+      rewrite H'; clear H'.
+      apply Hlub; intro i; specialize (Hx i); simpl in *.
+      apply Qle_shift_div_l; auto; lra. }
+    apply Hlub; intro i; specialize (Hx i); simpl in *.
+    apply Qle_shift_div_l; lra.
+Qed.
+
+Lemma supremum_scalar' (f : nat -> Q) (c sup : Q):
+  (0 < c) ->
+  supremum (c * sup) (fun i => c * f i) -> supremum sup f.
+Proof.
+  intros Hpos [Hub Hlub].
+  split.
+  -  intro i; specialize (Hub i); simpl in *; nra.
+  - intros x Hx; simpl in *.
+    cut (c * sup <= c * x).
+    { nra. }
+    apply Hlub; intro i; specialize (Hx i); simpl in *; nra.
+Qed.
+
+Lemma crunch_union_sum {A : Type} (f : A -> Q) (s1 s2 : nat -> A) (i : nat) :
+  crunch (f ∘ seq_union s1 s2) i == f (s1 i) + f (s2 i).
+Proof.
+  unfold compose, crunch, seq_union.
+  replace (i+i)%nat with (i*2)%nat by lia.
+  rewrite Nat.mod_mul; auto.
+  replace (S (i * 2)) with (1 + i * 2)%nat by lia.
+  rewrite Nat.mod_add, Nat.div_add, Nat.div_mul; auto; simpl; lra.
+Qed.
+
+Lemma partial_sum_proper (f g : nat -> Q) :
+  f_Qeq f g ->
+  f_Qeq (partial_sum f) (partial_sum g).
+Proof.
+  intros Hfg i.
+  unfold f_Qeq in Hfg. 
+  induction i.
+  - unfold partial_sum; simpl; rewrite Hfg; reflexivity.
+  - rewrite 2!partial_sum_S, IHi, Hfg; reflexivity.
+Qed.
+
+(* Lemma measure_seq_singleton (f : nat -> option (list bool)) (b : bool) (i : nat) : *)
+(*   option_measure (seq_product MonoidOptionList (singleton_seq [b]) f i) ==  *)
+(*   (1#2) * option_measure (f i). *)
+(* Proof. *)
+(*   unfold option_measure. unfold seq_product. simpl. *)
+(*   destruct (nat_f i). *)
+                  
+
+(** Infer computes the supremum of partial sums of measures of the
+    sequence of bit strings generated from tree [t] wrt predicate [P]. *)
+(** TODO: maybe assume termination with probability 1? *)
+Lemma infer_supremum {A : Type}
+      (t : tree A) (P : A -> bool) (f : nat -> option (list bool)) :
+  unbiased t ->
+  tree_sequence t P f ->
+  supremum (infer_f (fun x => if P x then 1 else 0) t)
+           (partial_sum (option_measure ∘ f)).
+Proof.
+  unfold infer.
+  revert f.
+  induction t; intros f Hunbiased Hseq.
+  - unfold infer. simpl.
+    unfold const.
+    unfold tree_sequence in Hseq; simpl in Hseq.
+    destruct (P a) eqn:Ha.
+    + apply const_supremum.
+      intro i; apply Qeq_equ.
+      unfold compose, option_measure. simpl.
+      unfold tree_sequence in Hseq. simpl in Hseq.
+      inversion Hseq.
+      rewrite partial_sum_singleton.
+      * reflexivity.
+      * intros j Hlt; rewrite singleton_seq_none; auto; reflexivity.
+    + inversion Hseq.
+      apply const_supremum.
+      intro i; apply Qeq_equ.
+      unfold compose, option_measure. simpl.
+      rewrite partial_sum_const, sum_Q_list_repeat_0; lra.
+  - unfold infer; simpl.
+    inversion Hseq.
+    apply const_supremum; intro i; apply Qeq_equ.
+    unfold compose, option_measure; simpl.
+    rewrite partial_sum_const, sum_Q_list_repeat_0; lra.
+  - simpl; inversion Hseq; subst.
+    apply crunch_partial_sum_supremum.
+    + admit.
+    + eapply Proper_supremum_Q.
+      * reflexivity.
+      * etransitivity.
+        apply partial_sum_proper. intro j; apply crunch_union_sum.
+        intro j; apply partial_sum_linear.
+      * apply supremum_sum_Q.
+        -- admit.
+        -- admit.
+        -- 
+          (* inversion Hunbiased; subst. *)
+          (* inversion H1; subst. *)
+          (* inversion H2; subst. *)
+          (* eapply Proper_supremum. *)
+          (* reflexivity. *)
+          (* apply f_Qeq_equ. intro i. *)
+          admit.
+        -- admit.
+  - admit.
 Admitted.

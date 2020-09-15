@@ -25,7 +25,7 @@ Require Import ExtLib.Data.Monads.StateMonad.
 Require Import axioms.
 Require Import cpGCL.
 Require Import infer.
-Require Import measure.
+Require Import borel.
 Require Import Q.
 Require Import tree.
 
@@ -166,7 +166,9 @@ Inductive sample {A : Type} :
     sample t2 P bs ->
     sample t P (true :: bs).
 
-(** Step-indexed version of [sample]. *)
+(** Step-indexed version of [sample]. [sample_n t P bs n] means that
+  itree [t] produces a sample in [P] given [bs] as input in at most
+  [n] steps. *)
 Inductive sample_n {A : Type} :
   itree unbiasedE A -> (A -> Prop) -> list bool -> nat -> Prop :=
 | sample_n_ret : forall t (P : A -> Prop) x n,
@@ -677,19 +679,20 @@ Lemma is_true_sumbool {A : Type} (P : A -> bool) :
   forall x, {is_true (P x)} + {~ is_true (P x)}.
 Proof. intro x; destruct (P x); intuition. Defined.
 
-(** LPO version (assuming decidability of termination). *)
+(** LPO version of measure_seq (assuming decidability of termination). *)
 Definition measure_seq {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) (n : nat) : Q :=
-  if (strong_LPO (sample_n t (fun x => is_true (P x)) (bit_sequences n))
-                 (sample_n_sumbool t (fun x => is_true (P x))
-                                   (bit_sequences n) (is_true_sumbool P)))
-  then interval_measure (bit_sequences n)
+  let bs := bit_sequences n in
+  if strong_LPO (sample_n t (fun x => is_true (P x)) bs)
+                (sample_n_sumbool t (fun x => is_true (P x))
+                                  bs (is_true_sumbool P))
+  then interval_measure bs
   else 0.
 
 Definition measure_chain {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) (n : nat) : Q :=
   partial_sum (measure_seq t P) n.
-  
+
 
 (** Purely propositional version. *)
 
@@ -820,11 +823,24 @@ Definition unbiased_tree_to_itree' {A : Type} (t : tree A) : itree unbiasedE A :
 
 Definition meas_seq {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) (n : nat) : meas :=
-  if (strong_LPO (sample_n t (fun x => is_true (P x)) (bit_sequences n))
+  let bs := bit_sequences n in
+  if (strong_LPO (sample_n t (fun x => is_true (P x)) bs)
                  (sample_n_sumbool t (fun x => is_true (P x))
-                                   (bit_sequences n) (is_true_sumbool P)))
-  then meas_interval (bit_sequences n)
+                                   bs (is_true_sumbool P)))
+  then meas_interval bs
   else meas_empty.
+
+(* Definition meas_seq' {A : Type} *)
+(*            (t : itree unbiasedE A) (P : A -> bool) : nat -> meas := *)
+(*   (fun bs => if (strong_LPO (sample_n t (fun x => is_true (P x)) bs) *)
+(*                          (sample_n_sumbool t (fun x => is_true (P x)) *)
+(*                                            bs (is_true_sumbool P))) *)
+(*           then meas_interval bs *)
+(*           else meas_empty) ∘ bit_sequences. *)
+
+(* Lemma meas_seq_meas_seq' {A : Type} (t : itree unbiasedE A) (P : A -> bool) (n : nat) : *)
+(*   meas_seq t P n = meas_seq' t P n. *)
+(* Proof. reflexivity. Qed. *)
 
 (** The preimage of a set P under itree t is a measurable set. *)
 Definition preimage_meas {A : Type}
@@ -1123,6 +1139,13 @@ Proof.
   apply bit_sequences_inj in HC; congruence.
 Qed.
 
+Lemma infer_f_supremum_measure (A : Type) (P : A -> bool) (t : tree A) :
+  supremum (infer (fun x : A => if P x then 1 else 0) t)
+           (partial_sum (measure_seq (unbiased_tree_to_itree' t) P)).
+Proof.
+  
+Admitted.
+
 Lemma preimage_meas_infer {A : Type} (t : tree A) (P : A -> bool) :
   measure (preimage_meas (unbiased_tree_to_itree' t) P)
           (infer (fun x => if P x then 1 else 0) t).
@@ -1131,11 +1154,8 @@ Proof.
   - intros i j Hneq; apply meas_seq_disjoint; auto.
   - intro i; unfold meas_seq, measure_seq.
     destruct_LPO; constructor; reflexivity.
-  -
-    unfold infer.
-
-    admit.
-Admitted.
+  - apply infer_f_supremum_measure.
+Qed.
 
 Lemma sample_n_singleton_P {A : Type}
       (t : itree unbiasedE A) (P : A -> Prop) (bs : list bool) (n m : nat) (x : A) :
@@ -1204,14 +1224,14 @@ Proof.
       eapply sample_n_singleton_P'; eauto.
 Qed.
 
-(** Main sampling theorem. *)
+(** Sampling theorem. *)
 Section sample.
-  Variable reals : nat -> real.
-  Hypothesis reals_uniform : uniform reals.
-
   Variable A : Type.
   Variable t : tree A.
   Definition it : itree unbiasedE A := unbiased_tree_to_itree' t.
+
+  Variable reals : nat -> real.
+  Hypothesis reals_uniform : uniform reals.
 
   Variable samples : nat -> A.
   Hypothesis reals_samples
@@ -1226,61 +1246,23 @@ Section sample.
       exists n : nat, Qabs (P_prob - rel_freq P (prefix samples n)) < eps.
   Proof.
     intros eps Heps.
-    unfold uniform in reals_uniform.
     specialize (reals_uniform (preimage_meas_infer t P) Heps).
     destruct reals_uniform as [n Habs].
     exists n. unfold rel_freq' in Habs.
     assert (Heq: rel_freq (real_in_measb (preimage_meas it P))
                           (prefix reals n) ==
                  rel_freq P (prefix samples n)).
-    { destruct n.
+    { rewrite rel_freq_eq with (Q:=P) (g:=samples).
       - reflexivity.
-      - simpl.
-        unfold rel_freq.
-        destruct (prefix reals n ++ [reals n]) eqn:Hreals.
-        + apply app_eq_nil in Hreals; destruct Hreals; congruence.
-        + destruct (prefix samples n ++ [samples n]) eqn:Hsamples.
-          * apply app_eq_nil in Hsamples; destruct Hsamples; congruence.
-          * assert (Hlen: length (r :: l) = length (a :: l0)).
-            { rewrite <- Hreals, <- Hsamples.
-              rewrite 2!app_length.
-              simpl.
-              rewrite 2!length_prefix; reflexivity. }
-            rewrite Hlen.
-            field_simplify_eq.
-            -- apply count_Q'_rel_eq.
-               assert (H: r :: l = prefix reals (S n)).
-               { rewrite <- Hreals; reflexivity. }
-               rewrite H; clear H.
-               assert (H: a :: l0 = prefix samples (S n)).
-               { rewrite <- Hsamples; reflexivity. }
-               rewrite H; clear H.
-               apply list_rel_prefix; intro i.
-               specialize (reals_samples i).
-               destruct reals_samples as [m [n0 Hreals_samples]].
-               apply sample_n_real_in_measb with (P0:=P) in Hreals_samples.
-               destruct_LPO.
-               ** apply Hreals_samples in e; auto.
-               ** destruct (P (samples i)); auto.
-                  exfalso; apply n1; apply Hreals_samples; auto.
-            -- apply Q_neq_0; simpl; lia. }
+      - intro i; destruct (reals_samples i) as [m [fuel reals_sample]].
+        apply sample_n_real_in_measb with (P0:=P) in reals_sample.
+        simpl; destruct_LPO.
+        + apply reals_sample in e; auto.
+        + destruct (P (samples i)); auto.
+          exfalso; apply n0; apply reals_sample; auto. }
     rewrite <- Heq; auto.
   Qed.
 End sample.
-
-(* Definition uniform (reals : nat -> real) : Prop := *)
-(*   forall U : meas, *)
-(*   forall m : Q, *)
-(*     measure U m -> *)
-(*     forall eps : Q, *)
-(*       0 < eps -> *)
-(*       exists n, Qabs (m - rel_freq U (prefix reals n)) < eps. *)
-
-
-
-
-
-
 
 
 (** TODO: translating biased choice events into bernoulli trees with

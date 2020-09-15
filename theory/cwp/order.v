@@ -566,3 +566,13 @@ Proof.
   - intros ub Hub'. apply Hlub; intro z.
     specialize (Hub' (S z)); apply Hub'.
 Qed.
+
+Lemma ge_upper_bound {A : Type} `{OType A} (ub : A) (f g : nat -> A) :
+  (forall i, leq (g i) (f i)) ->
+  upper_bound ub f ->
+  upper_bound ub g.
+Proof.
+  intros Hleq Hub y; etransitivity.
+  - apply Hleq.
+  - apply Hub.
+Qed.

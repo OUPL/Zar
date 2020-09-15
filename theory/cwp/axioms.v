@@ -97,3 +97,10 @@ Ltac destruct_LPO :=
   | [ H: context[if strong_LPO ?x ?y then _ else _] |- _] =>
     destruct (strong_LPO x y)
   end.
+
+
+(** There exists a bijective pair of mappings between nat and nat*nat. *)
+Axiom nat_f : nat -> nat * nat.
+Axiom nat_g : nat * nat -> nat.
+Axiom nat_g_f : forall n, nat_g (nat_f n) = n.
+Axiom nat_f_g : forall p, nat_f (nat_g p) = p.

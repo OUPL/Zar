@@ -7,6 +7,7 @@ Require Import Coq.QArith.QArith.
 Require Import Coq.QArith.Qabs.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
+Import ListNotations.
 Local Open Scope program_scope.
 
 
@@ -32,6 +33,14 @@ Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x.
 Notation "f '==f' g" := (forall x, f x == g x) (at level 80, no associativity) : Q_scope.
 Local Open Scope Q_scope.
 
+Fixpoint first_n {A : Type} (f : nat -> A) (n : nat) : list A :=
+  match n with
+  | O => []
+  | S n' => first_n f n' ++ [f n']
+  end.
+
+Definition partial_sum (f : nat -> Q) (n : nat) : Q :=
+  sum_Q_list (first_n f (S n)).
 
 (** Lemmas *)
 
@@ -185,6 +194,12 @@ Proof. intro; subst; reflexivity. Qed.
 Instance f_Qeq_Reflexive {A : Type} : Reflexive (@f_Qeq A).
 Proof. intros ? ?; reflexivity. Qed.
 
+Instance f_Qeq_Symmetric {A : Type} : Symmetric (@f_Qeq A).
+Proof. intros f g Hfg x; symmetry; auto. Qed.
+
+Instance f_Qeq_Transitive {A : Type} : Transitive (@f_Qeq A).
+Proof. intros f g h Hfg Hgh x; etransitivity; eauto. Qed.
+
 Lemma f_Qeq_refl {A : Type} (f : A -> Q) :
   f ==f f.
 Proof. intros ?; apply Qeq_refl. Qed.
@@ -235,6 +250,12 @@ Lemma sum_Q_list_map_const_0 {A : Type} (l : list A) :
   sum_Q_list (map (const 0) l) == 0.
 Proof.
   unfold const. induction l; simpl; try rewrite IHl; reflexivity.
+Qed.
+
+Lemma sum_Q_list_app (l1 l2 : list Q) :
+  sum_Q_list (l1 ++ l2) == sum_Q_list l1 + sum_Q_list l2.
+Proof.
+  unfold sum_Q_list; rewrite fold_right_app; induction l1; simpl; lra.
 Qed.
 
 Lemma convex_l (p x y : Q) :
@@ -406,3 +427,7 @@ Lemma Q_neq_0 (z : Z) :
   z <> Z0 ->
   ~ (z # 1) == 0.
 Proof. intros Hz HC; inversion HC; lia. Qed.
+
+Lemma sum_Q_list_repeat_0 (n : nat) :
+  sum_Q_list (repeat 0 n) == 0.
+Proof. induction n; simpl; lra. Qed.

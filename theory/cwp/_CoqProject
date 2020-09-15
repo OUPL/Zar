@@ -2,6 +2,7 @@
 
 axioms.v
 bernoulli.v
+borel.v
 compile.v
 cpGCL.v
 cwp.v
@@ -15,5 +16,6 @@ measure.v
 misc.v
 order.v
 Q.v
+set.v
 tests.v
 tree.v

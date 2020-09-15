@@ -3,13 +3,21 @@
 Set Implicit Arguments.
 Require Import Coq.Program.Basics.
 Require Import List.
+Require Import Coq.Arith.PeanoNat.
+Require Import Nat.
 Require Import Coq.QArith.QArith.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
 Require Import ExtLib.Structures.Monad.
+Require Import ExtLib.Structures.Monoid.
 Require Import Permutation.
 Import ListNotations.
 
+(* From Equations Require Import Equations. *)
+
+Require Import axioms.
+Require Import borel.
+Require Import measure.
 Require Import misc.
 Require Import order.
 Require Import Q.
@@ -1437,3 +1445,173 @@ Fixpoint reduce_tree {A : Type} `{EqType A} (t : tree A) : tree A :=
   | Fix n t1 => Fix n (reduce_tree t1)
   | _ => t
   end.
+
+
+(** Tree preimage. *)
+
+Definition singleton_seq {A : Type} (x : A) (i : nat) : option A :=
+  match i with
+  | O => Some x
+  | _ => None
+  end.
+
+(** Interleave two infinite sequences together. *)
+Definition seq_union {A : Type} (f g : nat -> A) (i : nat) : A :=
+  match modulo i 2 with
+  | O => f (div i 2)
+  | _ => g (div i 2)%nat
+  end.
+
+(** seq_union is correct. *)
+Lemma seq_union_spec {A : Type} (f g : nat -> A) (x : A) :
+  ((exists i, f i = x) \/ (exists j, g j = x)) <-> exists i, seq_union f g i = x.
+Proof.
+  split.
+  - unfold seq_union; intros [[i Hf] | [i Hg]].
+    + exists (2*i)%nat.
+      rewrite mult_comm, Nat.mod_mul; try lia.
+      rewrite Nat.div_mul; try lia; auto.
+    + exists (2*i + 1)%nat.
+      rewrite Nat.add_mod; try lia.
+      rewrite mult_comm; rewrite Nat.mod_mul; try lia.
+      rewrite plus_0_l.
+      assert (H: ((i * 2 + 1) / 2 = i)%nat).
+      { rewrite plus_comm.
+        rewrite Nat.div_add; auto. }
+      rewrite H; auto.
+  - intros [i Hunion].
+    unfold seq_union in Hunion.
+    destruct (i mod 2); firstorder.
+Qed.
+
+(** Flatten a sequence of sequences via the bijection from nat to nat*nat. *)
+Definition seq_flatten {A : Type} (f : nat -> nat -> A) (n : nat) : A :=
+  let (i, j) := nat_f n in f i j.
+
+(** Split a sequence into a sequence of sequences.*)
+Definition seq_split {A : Type} (f : nat -> A) (i j : nat) : A :=
+  let n := nat_g (i, j) in f n.
+
+(* Definition sequence_union {A : Type} (f g : countable_sequence A) : countable_sequence A := *)
+(*   match (f, g) with *)
+(*   | (finite_seq l1, finite_seq l2) => finite_seq (l1 ++ l2) *)
+(*   | (finite_seq l, infinite_seq s) => infinite_seq (prepend_list_seq l s) *)
+(*   | (infinite_seq s, finite_seq l) => infinite_seq (prepend_list_seq l s) *)
+(*   | (infinite_seq s1, infinite_seq s2) => infinite_seq (seq_union s1 s2) *)
+(*   end. *)
+
+(** Pointwise concatenation of monoid sequences. *)
+Definition seq_concat {A : Type} (M : Monoid A) (f g : nat -> A) (i : nat) : A :=
+  monoid_plus M (f i) (g i).
+
+Definition seq_concat_n {A : Type} (M : Monoid A) (f g : nat -> A) (i n : nat) : A :=
+  Nat.iter n (fun f' => seq_concat M f' g) f i.
+
+(** Cartesian product of two monoid sequences. *)
+Definition seq_product {A : Type} (M : Monoid A) (f g : nat -> A) (n : nat) : A :=
+  let (i, j) := nat_f n in
+  monoid_plus M (f i) (g j).
+
+Definition seq_product' {A : Type} (M : Monoid A) (f g : nat -> A) : nat -> A :=
+  seq_flatten (fun i j => seq_concat M (const (f i)) g j).
+
+(** It's nice that the two definitions coincide perfectly. *)
+Lemma seq_product_equiv {A : Type} (M : Monoid A) (f g : nat -> A) (n : nat) :
+  seq_product M f g n = seq_product' M f g n.
+Proof. reflexivity. Qed.  
+
+(** Sequence containing all finite repetitions of elements of the
+    argument sequence. *)
+Definition seq_reps {A : Type} (M : Monoid A) (f : nat -> A) : nat -> A :=
+  seq_flatten (fun i n => seq_concat_n M f f n i).
+
+(** TODO: convert tree into partial function from reals to A. Then we
+    can prove that it's a measurable function. *) 
+(* Definition tree_partial_fun {A : Type} (t : tree A) : partial_fun real A := *)
+(*   fun r => None. *)
+
+Inductive RE (A : Type) : Type :=
+| RE_empty : RE A
+| RE_epsilon : RE A
+| RE_lit : A -> RE A
+| RE_seq : RE A -> RE A -> RE A
+| RE_choice : RE A -> RE A -> RE A
+| RE_plus : RE A -> RE A.
+
+Definition RE_star {A : Type} (re : RE A) := RE_choice (@RE_epsilon A) (RE_plus re).
+
+Fixpoint RE_of_tree_fail {A : Type} (t : tree A) (n : nat) : RE bool :=
+  match t with
+  | Leaf x => @RE_empty bool
+  | Fail _ m => if m =? n then @RE_epsilon bool else @RE_empty bool
+  | Choice _ t1 t2 => RE_choice (RE_seq (RE_lit true) (RE_of_tree_fail t1 n))
+                               (RE_seq (RE_lit false) (RE_of_tree_fail t2 n))
+  | Fix lbl t1 => @RE_empty bool
+  end.
+
+Fixpoint RE_of_tree {A : Type} (t : tree A) (P : A -> bool) : RE bool :=
+  match t with
+  | Leaf x => if P x then @RE_epsilon bool else @RE_empty bool
+  | Fail _ _ => @RE_empty bool
+  | Choice _ t1 t2 => RE_choice (RE_seq (RE_lit true) (RE_of_tree t1 P))
+                               (RE_seq (RE_lit false) (RE_of_tree t2 P))
+  | Fix lbl t1 => RE_seq (RE_star (RE_of_tree_fail t1 lbl)) (RE_of_tree t1 P)
+  end.
+
+(** TODO: need to account for observation failures. *)
+(* Definition RE_of_tree' {A : Type} (t : tree A) (P : A -> bool) : RE bool := *)
+(*   RE_seq (RE_of_tree_fail t *)
+
+Definition MonoidOptionList {A : Type} : Monoid (option (list A)) :=
+  {| monoid_plus := fun x y =>
+                      match (x, y) with
+                      | (None, _) => y
+                      | (_, None) => x
+                      | (Some l, Some r) => Some (l ++ r)
+                      end
+   ; monoid_unit := None |}.
+
+Program Instance MonoidLawsOptionList {A : Type} : MonoidLaws (@MonoidOptionList A).
+Next Obligation. intros [] [] []; auto; f_equal; rewrite app_assoc; auto. Qed.
+Next Obligation. intro; auto. Qed.
+Next Obligation. intros []; auto. Qed.
+
+Inductive RE_sequence {A : Type} : RE A -> (nat -> option (list A)) -> Prop :=
+| RE_sequence_empty : RE_sequence (@RE_empty A) (const None)
+| RE_sequence_epsilon : RE_sequence (@RE_epsilon A) (singleton_seq [])
+| RE_sequence_lit : forall x, RE_sequence (RE_lit x) (singleton_seq [x])
+| RE_sequence_seq : forall r1 r2 s1 s2,
+    RE_sequence r1 s1 ->
+    RE_sequence r2 s2 ->
+    RE_sequence (RE_seq r1 r2) (seq_product MonoidOptionList s1 s2)
+| RE_sequence_choice : forall r1 r2 s1 s2,
+    RE_sequence r1 s1 ->
+    RE_sequence r2 s2 ->
+    RE_sequence (RE_choice r1 r2) (seq_union s1 s2)
+| RE_sequence_plus : forall r s,
+    RE_sequence r s ->
+    RE_sequence (RE_plus r) (seq_reps MonoidOptionList s).
+
+(** A proposition asserting that the sequence [f] is generated by the
+    tree [t] wrt predicate [P]. *)
+Definition tree_sequence {A : Type}
+           (t : tree A) (P : A -> bool) (f : nat -> option (list bool)) : Prop :=
+  RE_sequence (RE_of_tree t P) f.
+
+(* Inductive recognizes {A : Type} : RE A -> list A -> Prop := *)
+(* | recognizes_epsilon : recognizes (@RE_epsilon A) [] *)
+(* | recognizes_lit : forall x, recognizes (RE_lit x) [x] *)
+(* | recognizes_seq : forall r1 r2 l1 l2, *)
+(*     recognizes r1 l1 -> *)
+(*     recognizes r2 l2 -> *)
+(*     recognizes (RE_seq r1 r2) (l1 ++ l2) *)
+(* | recognizes_choice_l : forall r1 r2 l, *)
+(*     recognizes r1 l -> *)
+(*     recognizes (RE_choice r1 r2) l *)
+(* | recognizes_choice_r : forall r1 r2 l, *)
+(*     recognizes r2 l -> *)
+(*     recognizes (RE_choice r1 r2) l *)
+(* | recognizes_plus : forall r l1 l2, *)
+(*     recognizes r l1 -> *)
+(*     recognizes (RE_star r) l2 -> *)
+(*     recognizes (RE_plus r) (l1 ++ l2). *)
