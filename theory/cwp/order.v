@@ -99,6 +99,11 @@ Qed.
 Instance Symmetric_equ A `{o : OType A} : Symmetric equ.
 Proof. unfold Symmetric, equ; intuition. Qed.
 
+Instance Proper_equ : Proper (equ ==> equ ==> iff) equ.
+Proof.
+  intros x y [Hxy Hyx] w z [Hwz Hzw]; split; intros [Hxw Hwx];
+    split; etransitivity; eauto; etransitivity; eauto.
+Qed.
 
 (** f is an ω-chain *)
 Definition chain {A : Type} `{o : OType A} (f : nat -> A) : Prop :=
@@ -283,6 +288,7 @@ Proof.
     etransitivity; eauto; apply Hequ.
 Qed.
 
+(** Eventually constant. *)
 Lemma const_supremum' {A : Type} `{o : OType A} (f : nat -> A) (x : A) :
   chain f ->
   (exists n0, forall n, (n0 <= n)%nat -> equ (f n) x) ->
@@ -576,3 +582,40 @@ Proof.
   - apply Hleq.
   - apply Hub.
 Qed.
+
+Lemma supremum_Qeq (f : nat -> Q) (x y : Q) :
+  x == y ->
+  supremum x f -> supremum y f.
+Proof.
+  intros Heq Hsup.
+  eapply equ_supremum; eauto.
+  apply Qeq_equ; auto.
+Qed.
+
+Lemma supremum_f_Qeq (f g : nat -> Q) (sup : Q) :
+  f ==f g ->
+  supremum sup f -> supremum sup g.
+Proof.
+  intros Heq Hsup.
+  eapply Proper_supremum; eauto. reflexivity.
+  symmetry; apply f_Qeq_equ; apply Heq.
+Qed.
+
+Lemma supremum_converges (sup : Q) (f : nat -> Q) :
+  chain f ->
+  supremum sup f ->
+  forall eps, 0 < eps -> exists n, sup - f n < eps.
+Proof.
+  intros Hchain [Hub Hlub] eps Heps.
+  unfold upper_bound in Hub.
+  simpl in *.
+
+  assert (~ (forall n, eps <= sup - f n)).
+  { intros Hle.
+    specialize (Hlub (sup - eps)).
+    assert (H0: upper_bound (sup - eps) f).
+    { intros i; simpl; specialize (Hle i); lra. }
+    specialize (Hlub H0). lra. }
+
+  (* TODO: hmm.. is there a constructive argument? Could use LPO. *)
+Admitted.

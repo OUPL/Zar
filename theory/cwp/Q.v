@@ -7,8 +7,11 @@ Require Import Coq.QArith.QArith.
 Require Import Coq.QArith.Qabs.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
+Require Import Coq.Sorting.Permutation.
 Import ListNotations.
 Local Open Scope program_scope.
+
+Require Import misc.
 
 
 (** Definitions *)
@@ -33,14 +36,17 @@ Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x.
 Notation "f '==f' g" := (forall x, f x == g x) (at level 80, no associativity) : Q_scope.
 Local Open Scope Q_scope.
 
-Fixpoint first_n {A : Type} (f : nat -> A) (n : nat) : list A :=
-  match n with
-  | O => []
-  | S n' => first_n f n' ++ [f n']
-  end.
-
 Definition partial_sum (f : nat -> Q) (n : nat) : Q :=
-  sum_Q_list (first_n f (S n)).
+  (* sum_Q_list (first_n f (S n)). *)
+  sum_Q_list (first_n f n).
+
+Definition max_Q (x y : Q) : Q :=
+  if Qle_bool x y then y else x.
+
+(* def is the default value, should be chosen to be less than anything
+   in the list. *)
+Definition max_Q_list (def : Q) (l : list Q) : Q :=
+  fold_right max_Q def l.
 
 (** Lemmas *)
 
@@ -62,16 +68,29 @@ Proof. field. Qed.
 Lemma Qminus_0_r (a : Q) : a - 0 == a.
 Proof. field. Qed.
 
-Lemma not_in_sum_Q_list a l:
+Lemma not_in_sum_Q_list a l :
   ~ In a l ->
-  sum_Q_list (map (fun n : nat => if a =? n then 1 else 0) l) = 0.  
+  sum_Q_list (map (fun n : nat => if a =? n then 1 else 0) l) == 0.
 Proof.
-  induction l; auto; intro Hnotin.
-  simpl.
+  induction l; auto; intro Hnotin; simpl; try lra.
   destruct (Nat.eqb_spec a a0); subst.
   - exfalso; apply Hnotin; constructor; auto.
-  - rewrite IHl; auto.
+  - rewrite IHl; auto; try lra.
     intro HC; apply Hnotin; right; auto.
+Qed.
+
+Lemma in_nodup_sum_Q_list a l :
+  NoDup l ->
+  In a l ->
+  sum_Q_list (map (fun n : nat => if a =? n then 1 else 0) l) == 1.
+Proof.
+  induction l; auto; intros Hnodup Hin; simpl.
+  - inversion Hin.
+  - inversion Hnodup; subst.
+    destruct Hin; subst.
+    + rewrite Nat.eqb_refl, not_in_sum_Q_list; auto; lra.
+    + destruct (Nat.eqb_spec a a0); subst; try congruence.
+      rewrite IHl; auto; lra.
 Qed.
 
 Lemma sum_Q_list_map_plus {A : Type} (f g : A -> Q) (l : list A) :
@@ -85,12 +104,14 @@ Lemma sum_Q_list_map_mult_scalar {A : Type} (a : Q) (f : A -> Q) (l : list A) :
 Proof. induction l; simpl; lra. Qed.
 
 Lemma sum_Q_list_map_div_scalar {A : Type} (a : Q) (f : A -> Q) (l : list A) :
-  0 < a ->
   sum_Q_list (map (fun x => f x / a) l) ==
   sum_Q_list (map f l) / a.
 Proof.
-  intro H0; induction l; simpl. field. lra.
-  rewrite IHl. field. lra.
+  induction l; simpl. reflexivity.
+  rewrite IHl. 
+  destruct (Qeq_bool a 0) eqn:Ha.
+  - apply Qeq_bool_eq in Ha; rewrite Ha; rewrite 3!Qdiv_0_den; lra.
+  - apply Qeq_bool_neq in Ha; field; auto.
 Qed.
 
 Lemma Qeq_Qdiv (a b c d : Q) :
@@ -221,6 +242,16 @@ Lemma Qpow_nonnegative a n :
   0 <= Qpow a n.
 Proof. intros; induction n; simpl; nra. Qed.
 
+Lemma Qpow_positive a n :
+  0 < a ->
+  0 < Qpow a n.
+Proof. intros; induction n; simpl; nra. Qed.
+
+Lemma Qpow_nonzero a n :
+  0 < a ->
+  ~ Qpow a n == 0.
+Proof. intro H; apply Qpow_positive with (n:=n) in H; lra. Qed.
+
 Instance Proper_Qpow : Proper (Qeq ==> eq ==> Qeq) Qpow.
 Proof.
   intros x y Heq1 n m Heq2; subst.
@@ -302,7 +333,7 @@ Proof.
   assert (c == c/(2#1) + c/(2#1)).
   { field. }
   rewrite H; lra.
-Qed.
+Qed.    
 
 Lemma ratio_Qle_sum a b c :
   b < 1 ->
@@ -431,3 +462,143 @@ Proof. intros Hz HC; inversion HC; lia. Qed.
 Lemma sum_Q_list_repeat_0 (n : nat) :
   sum_Q_list (repeat 0 n) == 0.
 Proof. induction n; simpl; lra. Qed.
+
+Lemma partial_sum_S (f : nat -> Q) (i : nat) :
+  partial_sum f (S i) == partial_sum f i + f i.
+Proof.
+  induction i.
+  - unfold partial_sum. simpl. lra.
+  - rewrite IHi; unfold partial_sum; simpl.
+    rewrite sum_Q_list_app, sum_Q_list_app.
+    simpl; lra.
+Qed.
+
+Lemma fold_right_permutation (f : Q -> Q -> Q) (l1 l2 : list Q) (z : Q) :
+  Proper (Qeq ==> Qeq ==> Qeq) f ->
+  (forall x y, f x y == f y x) ->
+  (forall x y z, f x (f y z) == f (f x y) z) ->
+  Permutation l1 l2 ->
+  fold_right f z l1 == fold_right f z l2.
+Proof.
+  intros Hproper Hcomm Hassoc Hperm.
+  induction Hperm; auto; simpl.
+  - reflexivity.
+  - rewrite IHHperm; reflexivity.
+  - set (w := fold_right f z l).
+    rewrite Hassoc.
+    rewrite Hcomm with (x:=y) (y:=x).
+    rewrite <- Hassoc; reflexivity.
+  - rewrite IHHperm1, IHHperm2; reflexivity.
+Qed.
+
+Lemma Qdiv_Qmult_den a b c :
+  ~ 0 == b ->
+  ~ 0 == c ->
+  a / (b * c) == 1 / b * (a / c).
+Proof. intros Hb Hc; field; lra. Qed.
+
+Lemma partial_sum_0 (n : nat) :
+  partial_sum (const 0) n == 0.
+Proof.
+  induction n; try reflexivity.
+  rewrite partial_sum_S, IHn; reflexivity.
+Qed.
+
+Lemma sum_Q_list_prefix (l1 l2 : list Q) :
+  (forall x, In x l2 -> 0 <= x) ->
+  is_prefix l1 l2 ->
+  sum_Q_list l1 <= sum_Q_list l2.
+Proof.
+  intro Hnonneg.
+  induction 1.
+  - apply sum_Q_list_nonnegative; auto.
+  - simpl.
+    cut (sum_Q_list l1 <= sum_Q_list l2).
+    { lra. }
+    apply IHis_prefix; intros y Hin; apply Hnonneg; right; auto.
+Qed.
+
+Lemma sum_Q_list_first_n_Qle (f : nat -> Q) (n m : nat) :
+  (forall i, 0 <= f i) ->
+  (n <= m)%nat ->
+  sum_Q_list (first_n f n) <= sum_Q_list (first_n f m).
+Proof.
+  intros Hnonneg Hle.
+  apply sum_Q_list_prefix.
+  - intros z Hin'.
+    apply in_first_n in Hin'.
+    destruct Hin' as [i [Hle' Heq]]; subst; apply Hnonneg; right; auto.
+  - apply is_prefix_first_n; auto.
+Qed.
+
+Lemma sum_Q_list_pointwise_Qle (l1 l2 : list Q) :
+  list_rel Qle l1 l2 ->
+  sum_Q_list l1 <= sum_Q_list l2.
+Proof. induction 1; simpl; lra. Qed.
+
+Lemma sum_Q_list_pointwise_Qeq (l1 l2 : list Q) :
+  list_rel Qeq l1 l2 ->
+  sum_Q_list l1 == sum_Q_list l2.
+Proof. induction 1; simpl; lra. Qed.
+
+Lemma forall_Qlt_Qle (x ub : Q) :
+  (forall y, y < x -> y <= ub) ->
+  x <= ub.
+Proof.
+  intros Hle.
+  destruct (Qlt_le_dec ub x); auto.
+  assert (H0: (x + ub) / 2 < x).
+  { apply Qlt_shift_div_r; lra. }
+  assert (H1: ub < (x + ub) / 2).
+  { apply Qlt_shift_div_l; lra. }
+  specialize (Hle ((x + ub) / 2) H0); lra.
+Qed.
+
+Lemma forall_list_rel_Qlt_Qle (l : list Q) (ub : Q) :
+  (forall l', list_rel Qlt l' l -> sum_Q_list l' <= ub) ->
+  sum_Q_list l <= ub.
+Proof.
+  revert ub.
+  induction l; simpl; intros ub Hle.
+  - specialize (Hle [] (list_rel_nil _)); simpl in Hle; auto.
+  - cut (sum_Q_list l <= ub - a).
+    { lra. }
+    apply IHl.
+    intros l' Hrel.
+    cut (a + sum_Q_list l' <= ub).
+    { lra. }
+    apply forall_Qlt_Qle; intros y Hlt.
+    assert (y - sum_Q_list l' < a).
+    { lra. }
+    specialize (Hle (((y - sum_Q_list l' + a) / 2) :: l')).
+    simpl in Hle.
+    eapply Qle_trans.
+    2: { apply Hle; constructor; auto; apply Qlt_shift_div_r; lra. }
+    cut (y - sum_Q_list l' <= (y - sum_Q_list l' + a) / 2).
+    { lra. }
+    apply Qle_shift_div_l; lra.
+Qed.
+
+Lemma Qeq_Qle (x y : Q) :
+  x == y ->
+  x <= y.
+Proof. lra. Qed.
+
+Lemma Qdiv_combine_terms (a b c : Q) :
+  (a / c) + (b / c) == (a + b) / c.
+Proof.
+  destruct (Qeq_bool c 0) eqn:Hc.
+  - apply Qeq_bool_eq in Hc. rewrite Hc.
+    rewrite 3!Qdiv_0_den; lra.
+  - apply Qeq_bool_neq in Hc; field; auto.
+Qed.
+
+Lemma Qmult_Qdiv_r (a b c : Q) :
+  ~ c == 0 ->
+  a * c == b -> a == b / c.
+Proof. intros Hc H0; rewrite <- H0. rewrite Qdiv_mult_l; lra. Qed.
+
+Lemma ratio_Qeq_sum a b c :
+  ~ b == 1 ->
+  a + b * c == c -> a / (1 - b) == c.
+Proof. intros Hb H0; symmetry; apply Qmult_Qdiv_r; lra. Qed.

@@ -23,10 +23,14 @@ Require Import ExtLib.Structures.MonadState.
 Require Import ExtLib.Data.Monads.StateMonad.
 
 Require Import axioms.
+Require Import borel.
 Require Import cpGCL.
 Require Import infer.
-Require Import borel.
+Require Import infer_regular.
+Require Import order.
+Require Import misc.
 Require Import Q.
+Require Import regular.
 Require Import tree.
 
 (** A biased coin event can be raised, passing a rational p to the
@@ -740,7 +744,6 @@ Definition preimage_measure {A : Type}
            (t : itree unbiasedE A) (P : A -> Prop) (m : Q) : Prop :=
   supremumP m (measure_chainP t P).
 
-Require Import order.
 Definition preimage_measure' {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) (m : Q) : Prop :=
   supremum m (measure_chain t P).
@@ -765,16 +768,16 @@ Proof.
   split; intro H; inversion H; subst; solve [constructor; auto; lra].
 Qed.
 
-Lemma measure_chain_spec {A : Type}
-      (t : itree unbiasedE A) (P : A -> bool) (n : nat) :
-  measure_chainP t (fun x => is_true (P x)) n (measure_chain t P n).
-Proof.
-  unfold measure_chainP.
-  unfold measure_chain.
-  apply partial_sum_spec.
-  apply measure_seq_spec.
-  apply Proper_measure_seqP.
-Qed.
+(* Lemma measure_chain_spec {A : Type} *)
+(*       (t : itree unbiasedE A) (P : A -> bool) (n : nat) : *)
+(*   measure_chainP t (fun x => is_true (P x)) n (measure_chain t P n). *)
+(* Proof. *)
+(*   unfold measure_chainP. *)
+(*   unfold measure_chain. *)
+(*   apply partial_sum_spec. *)
+(*   apply measure_seq_spec. *)
+(*   apply Proper_measure_seqP. *)
+(* Qed. *)
 
 (** TODO *)
 (* Lemma preimage_measure_spec {A : Type} *)
@@ -1126,7 +1129,7 @@ Qed.
 Lemma meas_seq_disjoint {A : Type}
       (t : itree unbiasedE A) (P : A -> bool) (i j : nat) :
   i <> j ->
-  disjoint (meas_seq t P i) (meas_seq t P j).
+  borel.disjoint (meas_seq t P i) (meas_seq t P j).
 Proof.
   intro Hneq; unfold meas_seq.
   repeat destruct_LPO; try constructor.
@@ -1139,22 +1142,57 @@ Proof.
   apply bit_sequences_inj in HC; congruence.
 Qed.
 
-Lemma infer_f_supremum_measure (A : Type) (P : A -> bool) (t : tree A) :
+Lemma seq_bijection_tree_sequence_measure_seq {A : Type} (P : A -> bool) (t : tree A) (n : nat) :
+  seq_bijection (option_measure ∘ tree_sequence t P n) (measure_seq (unbiased_tree_to_itree' t) P).
+Proof.
+  unfold tree_sequence.
+  unfold measure_seq. simpl. unfold compose.
+  
+  (** IDEA: maybe show something like "for all bitstrings, there
+            exists a fuel parameter sufficient to produce a sample
+            using that bitstring iff it's in the regular language
+            denoted by the tree". *)
+  (* revert n. *)
+  (* induction t; intro m. *)
+  (* - unfold compose. *)
+  (*   unfold tree_sequence. simpl. *)
+  (*   unfold unbiased_tree_to_itree'. simpl. unfold tie_itree'.  *)
+  (*   simpl. *)
+  (*   unfold ITree.bind'. simpl. *)
+
+Admitted.
+
+Lemma infer_supremum_measure {A : Type} (P : A -> bool) (t : tree A) (n : nat) :
+  wf_tree t ->
+  unbiased t ->
+  (forall m, free_in m t -> m = n) ->
+  not_bound_in n t ->
   supremum (infer (fun x : A => if P x then 1 else 0) t)
            (partial_sum (measure_seq (unbiased_tree_to_itree' t) P)).
 Proof.
-  
-Admitted.
+  intros Hwf Hunbiased Hfree Hnotbound.
+  apply seq_bijection_supremum with (s1:=option_measure ∘ tree_sequence t P n).
+  - intro i; apply option_measure_nonnegative.
+  - intro i; unfold measure_seq; destruct_LPO; try lra;
+      apply interval_measure_nonnegative.
+  - apply seq_bijection_tree_sequence_measure_seq.
+  - apply infer_supremum; auto.
+Qed.
 
-Lemma preimage_meas_infer {A : Type} (t : tree A) (P : A -> bool) :
+Lemma preimage_meas_infer {A : Type} (t : tree A) (P : A -> bool) (n : nat) :
+  wf_tree t ->
+  unbiased t ->
+  (forall m, free_in m t -> m = n) ->
+  not_bound_in n t ->
   measure (preimage_meas (unbiased_tree_to_itree' t) P)
           (infer (fun x => if P x then 1 else 0) t).
 Proof.
+  intros Hwf Hunbiased Hfree Hnotbound.
   apply measure_union with (g := measure_seq (unbiased_tree_to_itree' t) P).
   - intros i j Hneq; apply meas_seq_disjoint; auto.
   - intro i; unfold meas_seq, measure_seq.
     destruct_LPO; constructor; reflexivity.
-  - apply infer_f_supremum_measure.
+  - eapply infer_supremum_measure; eauto.
 Qed.
 
 Lemma sample_n_singleton_P {A : Type}
@@ -1228,6 +1266,12 @@ Qed.
 Section sample.
   Variable A : Type.
   Variable t : tree A.
+  Variable lbl : nat.
+  Hypothesis Hwf : wf_tree t.
+  Hypothesis Hunbiased : unbiased t.
+  Hypothesis Hfree : forall m, free_in m t -> m = lbl.
+  Hypothesis Hnotbound : not_bound_in lbl t.
+
   Definition it : itree unbiasedE A := unbiased_tree_to_itree' t.
 
   Variable reals : nat -> real.
@@ -1246,7 +1290,7 @@ Section sample.
       exists n : nat, Qabs (P_prob - rel_freq P (prefix samples n)) < eps.
   Proof.
     intros eps Heps.
-    specialize (reals_uniform (preimage_meas_infer t P) Heps).
+    specialize (reals_uniform (preimage_meas_infer P Hwf Hunbiased Hfree Hnotbound) Heps).
     destruct reals_uniform as [n Habs].
     exists n. unfold rel_freq' in Habs.
     assert (Heq: rel_freq (real_in_measb (preimage_meas it P))

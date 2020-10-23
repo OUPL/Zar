@@ -17,6 +17,23 @@ Fixpoint geometric_series (a r : Q) (n : nat) :=
   | S n' => geometric_series a r n' + a * Qpow r n'
   end.
 
+Definition geometric_sequence (a r : Q) (n : nat) :=
+  a * Qpow r n.
+  (* match n with *)
+  (* | O => 0 *)
+  (* | S n' => a * Qpow r n' *)
+  (* end. *)
+
+Definition geometric_series' (a r : Q) := partial_sum (geometric_sequence a r).
+
+Lemma geometric_series_geometric_series' (a r : Q) (i : nat) :
+  geometric_series a r i == geometric_series' a r i.
+Proof.  
+  induction i; simpl.
+  - reflexivity.
+  - unfold geometric_series'; rewrite IHi, partial_sum_S; reflexivity.
+Qed.
+
 (** This slightly different series is used instead for wlp. It
   includes an additional term that is large initially but converges to
   zero as n increases. *)
@@ -148,6 +165,16 @@ Proof.
     apply geometric_series_monotone; auto.
     unfold leq; simpl; unfold Nat.le; lia.
   - apply geometric_series_converges; auto.
+Qed.
+
+Lemma geometric_series'_supremum (a r : Q) :
+  0 <= a -> 0 <= r -> r < 1 ->
+  supremum (a / (1 - r)) (geometric_series' a r).
+Proof.
+  intros H0 H1 H2.
+  eapply supremum_f_Qeq.
+  - apply geometric_series_geometric_series'.
+  - apply geometric_series_supremum; auto.
 Qed.
 
 Lemma wlpf_series_infimum (a r : Q) :

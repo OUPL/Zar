@@ -11,11 +11,14 @@ cwp_infer.v
 cwpf_infer.v
 geometric.v
 infer.v
+infer_regular.v
 itree.v
 measure.v
 misc.v
 order.v
 Q.v
+reduce.v
+regular.v
 set.v
 tests.v
 tree.v

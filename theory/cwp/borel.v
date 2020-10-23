@@ -9,6 +9,7 @@ Require Import List.
 Import ListNotations.
 
 Require Import axioms.
+Require Import misc.
 Require Import order.
 Require Import Q.
 
@@ -109,13 +110,6 @@ Proof.
         -- constructor; auto.
 Qed.
 
-Inductive is_prefix {A : Type} : list A -> list A -> Prop :=
-| is_prefix_nil : forall l2,
-    is_prefix nil l2
-| is_prefix_cons : forall x l1 l2,
-    is_prefix l1 l2 ->
-    is_prefix (x :: l1) (x :: l2).
-
 Lemma is_prefix_comparable {A : Type} (l1 l2 : list A) :
   comparable l1 l2 <-> is_prefix l1 l2 \/ is_prefix l2 l1.
 Proof.
@@ -124,21 +118,6 @@ Proof.
     induction Hcomp; try solve [repeat constructor].
     destruct IHHcomp; solve [repeat constructor; auto].
   - intros [Hpre | Hpre]; induction Hpre; constructor; auto.
-Qed.
-
-Instance Reflexive_is_prefix {A : Type} : Reflexive (@is_prefix A).
-Proof. intro x; induction x; constructor; auto. Qed.
-
-Instance Transitive_is_prefix {A : Type} : Transitive (@is_prefix A).
-Proof.
-  intros xs ys zs.
-  revert xs zs.
-  induction ys; intros xs zs H0 H1.
-  - inversion H0; subst; constructor.
-  - inversion H0; subst.
-    + constructor.
-    + inversion H1; subst.
-      constructor; apply IHys; auto.
 Qed.
 
 Definition interval_disjoint (a b : interval) : Prop := incomparable a b.
@@ -189,21 +168,21 @@ Lemma fold_right_Qplus_app (l1 l2 : list Q) :
   fold_right Qplus 0 l1 + fold_right Qplus 0 l2.
 Proof. induction l1; simpl; lra. Qed.
 
-Lemma partial_sum_spec (f : nat -> Q) (R : nat -> Q -> Prop) :
-  f_relation f R ->
-  Proper (eq ==> Qeq ==> iff) R ->
-  f_relation (partial_sum f) (partial_sumP R).
-Proof.
-  intros Hrel Hproper n.
-  induction n.
-  - unfold partial_sum. simpl. unfold compose.
-    constructor.
-    rewrite Qplus_0_r. apply Hrel.
-  - econstructor; eauto.
-    unfold partial_sum. simpl.
-    unfold sum_Q_list.
-    rewrite fold_right_Qplus_app; simpl; lra.
-Qed.
+(* Lemma partial_sum_spec (f : nat -> Q) (R : nat -> Q -> Prop) : *)
+(*   f_relation f R -> *)
+(*   Proper (eq ==> Qeq ==> iff) R -> *)
+(*   f_relation (partial_sum f) (partial_sumP R). *)
+(* Proof. *)
+(*   intros Hrel Hproper n. *)
+(*   induction n. *)
+(*   - unfold partial_sum. simpl. unfold compose. *)
+(*     constructor. *)
+(*     rewrite Qplus_0_r. apply Hrel. *)
+(*   - econstructor; eauto. *)
+(*     unfold partial_sum. simpl. *)
+(*     unfold sum_Q_list. *)
+(*     rewrite fold_right_Qplus_app; simpl; lra. *)
+(* Qed. *)
 
 (** The Borel measure of a measurable set. *)
 Inductive measure : meas -> Q -> Prop :=
@@ -310,85 +289,6 @@ Proof.
       apply n; exists x; destruct (H x); auto.
 Qed.
 
-Fixpoint prefix {A : Type} (f : nat -> A) (n : nat) : list A :=
-  match n with
-  | O => []
-  | S n' => prefix f n' ++ [f n']
-  end.
-
-Fixpoint prefix_aux {A : Type} (f : nat -> A) (n : nat) : list A :=
-  match n with
-  | O => []
-  | S n' => f n' :: prefix_aux f n'
-  end.
-
-Definition prefix' {A : Type} (f : nat -> A) (n : nat) : list A :=
-  rev (prefix_aux f n).
-
-Lemma prefix_prefix' {A : Type} (f : nat -> A) (n : nat) :
-  prefix f n = prefix' f n.
-Proof.
-  unfold prefix'.
-  induction n; auto; simpl.
-  rewrite IHn; auto.
-Qed.
-
-Definition drop {A : Type} (f : nat -> A) (n : nat) : nat -> A :=
-  fun i => f (i + n)%nat.
-
-Definition slice {A : Type} (f : nat -> A) (n m : nat) : list A :=
-  prefix (drop f n) m.
-
-Definition slice' {A : Type} (f : nat -> A) (n m : nat) : list A :=
-  match n with
-  | O => prefix f m
-  | S n' => prefix (fun i => f (S i)) m
-  end.
-
-Lemma length_prefix {A : Type} (f : nat -> A) (n : nat) :
-  length (prefix f n) = n.
-Proof.
-  induction n; simpl; auto.
-  rewrite app_length; simpl; lia.
-Qed.
-
-Lemma drop_O {A : Type} (f : nat -> A) :
-  forall i, drop f O i = f i.
-Proof. intro i; unfold drop; rewrite plus_0_r; reflexivity. Qed.
-
-Definition ext {A B : Type} (f g : A -> B) : Prop :=
-  forall x, f x = g x.
-
-Lemma Proper_prefix {A : Type} : Proper (@ext nat A ==> eq ==> eq) prefix.
-Proof.
-  intros f g Hext ? n ?; subst.
-  induction n; simpl; auto.
-  rewrite IHn, Hext; reflexivity.
-Qed.
-
-Lemma slice_O {A : Type} (f : nat -> A) (n : nat) :
-  slice f O n = prefix f n.
-Proof. apply Proper_prefix; auto; intro i; apply drop_O. Qed.
-
-Lemma is_prefix_app {A : Type} (l1 l2 : list A) :
-  is_prefix l1 (l1 ++ l2).
-Proof. induction l1; constructor; auto. Qed.
-
-Lemma prefix_is_prefix {A : Type} (f : nat -> A) (n m : nat) :
-  (n <= m)%nat ->
-  is_prefix (prefix f n) (prefix f m).
-Proof.
-  revert n. induction m; simpl; intros n Hle.
-  - assert (n = O). lia. subst. constructor.
-  - destruct (Nat.eqb_spec n (S m)); subst.
-    + reflexivity.
-    + assert (H: (n <= m)%nat).
-      { lia. }
-      apply IHm in H.
-      etransitivity; eauto.
-      apply is_prefix_app.
-Qed.
-      
 Lemma comparable_prefix {A : Type} (f : nat -> A) (n m : nat) :
   comparable (prefix f n) (prefix f m).
 Proof.
@@ -603,33 +503,6 @@ Qed.
 Lemma count_Q'_app {A : Type} (f : A -> bool) (l1 l2 : list A) :
   count_Q' f (l1 ++ l2) == count_Q' f l1 + count_Q' f l2.
 Proof. induction l1; simpl; lra. Qed.
-
-Inductive list_rel {A B : Type} (R : A -> B -> Prop) : list A -> list B -> Prop :=
-| list_rel_nil : list_rel R [] []
-| list_rel_cons : forall x y xs ys,
-    R x y ->
-    list_rel R xs ys ->
-    list_rel R (x :: xs) (y :: ys).
-
-Lemma list_rel_app {A B : Type}
-      (R : A -> B -> Prop) (l1 l2 : list A) (l3 l4 : list B) :
-  list_rel R l1 l3 /\ list_rel R l2 l4 -> list_rel R (l1 ++ l2) (l3 ++ l4).
-Proof.
-  revert l2 l3 l4.
-  induction l1; intros l2 l3 l4 [H0 H1];
-    inversion H0; subst; simpl; try constructor; auto.
-Qed.
-
-Lemma list_rel_prefix {A B : Type}
-      (f : nat -> A) (g : nat -> B) (R : A -> B -> Prop) (n : nat) :
-  (forall i, R (f i) (g i)) ->
-  list_rel R (prefix f n) (prefix g n).
-Proof.
-  induction n; intro Hrel; simpl.
-  - constructor.
-  - apply list_rel_app; split; auto.
-    constructor; auto; constructor.
-Qed.
 
 Lemma count_Q'_rel_eq {A B : Type}
       (f : A -> bool) (g : B -> bool) (xs : list A) (ys : list B) :
@@ -1118,7 +991,16 @@ Proof.
   intros Hnot x.
   intro HP. apply Hnot. exists x; auto.
 Qed.
-  
+
+Lemma interval_measure_nonnegative (bs : interval) :
+  0 <= interval_measure bs.
+Proof.
+  unfold interval_measure.
+  assert (0 < Qpow 2 (length bs)).
+  { apply Qpow_positive; lra. }
+  apply Qle_shift_div_l; auto; lra.
+Qed.
+
 (* Require Import FunctionalExtensionality. *)
 
 (* Program Instance EqType_real : EqType real := *)
