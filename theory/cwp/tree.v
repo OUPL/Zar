@@ -12,7 +12,6 @@ Require Import ExtLib.Structures.Monad.
 Require Import Permutation.
 Import ListNotations.
 
-Require Import borel.
 Require Import misc.
 Require Import order.
 Require Import Q.
