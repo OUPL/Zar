@@ -5,8 +5,9 @@ Set Implicit Arguments.
 From ITree Require Import
      ITree ITreeFacts.
 Import ITreeNotations.
+Local Open Scope itree_scope.
 
-(* From stdpp Require Import tactics. *)
+From Paco Require Import paco.
 
 Require Import Coq.Program.Basics.
 Require Import Coq.micromega.Lia.
@@ -14,24 +15,35 @@ Require Import Coq.QArith.QArith.
 Require Import Coq.QArith.Qabs.
 Require Import Coq.micromega.Lqa.
 Require Import Coq.Logic.Eqdep_dec.
-(* Require Import List. *)
-(* Import ListNotations. *)
+Require Import RelationClasses.
+Require Import Coq.Classes.Equivalence.
+Local Open Scope equiv_scope.
+Require Import Nat.
 Local Open Scope program_scope.
 
 Require Import ExtLib.Structures.Monad.
 Require Import ExtLib.Structures.MonadState.
 Require Import ExtLib.Data.Monads.StateMonad.
 
+Import MonadNotation.
+Local Open Scope monad_scope.
+
 Require Import axioms.
 Require Import borel.
 Require Import cpGCL.
+Require Import incomparable.
 Require Import infer.
 Require Import infer_regular.
+Require Import itree_lang_unique.
+Require Import itree_regular.
 Require Import order.
 Require Import misc.
+Require Import nondivergent.
 Require Import Q.
 Require Import regular.
+Require Import semiring.
 Require Import tree.
+Require Import unbiased_itree.
 
 (** A biased coin event can be raised, passing a rational p to the
   environment and receiving in return a single bit with probability p
@@ -40,12 +52,10 @@ Variant biasedE : Type -> Type :=
 | GetBiased : Q -> biasedE bool.
 (* | GetBiased : forall p : Q, 0 <= p <= 1 -> biasedE bool. *)
 
-Variant unbiasedE : Type -> Type :=
-| GetUnbiased : unbiasedE bool.
-
+(* Variant unbiasedE : Type -> Type := *)
+(* | GetUnbiased : unbiasedE bool. *)
 
 (** Commands to itrees directly. *)
-
 Fixpoint compile_itree (c : cpGCL) : ktree biasedE St (unit + St) :=
   match c with
   | CSkip => ret ∘ inr
@@ -61,20 +71,17 @@ Fixpoint compile_itree (c : cpGCL) : ktree biasedE St (unit + St) :=
     fun st => if e st then compile_itree c1 st else compile_itree c1 st
   | CChoice p c1 c2 =>
     fun st => Vis (GetBiased p) (fun b => if b : bool
-                                 then compile_itree c1 st
-                                 else compile_itree c2 st)
+                                    then compile_itree c1 st
+                                    else compile_itree c2 st)
   | CWhile e body =>
-    fun st => Basics.iter (map (fun x =>
-                               match x with
-                               | inl tt => inr (inl tt)
-                               | inr st' =>
-                                 if e st' then inl st else inr (inr st')
-                               end) (compile_itree body)) st
+    fun st => ITree.iter (map (fun x =>
+                              match x with
+                              | inl tt => inr (inl tt)
+                              | inr st' =>
+                                if e st' then inl st else inr (inr st')
+                              end) (compile_itree body)) st
   | CObserve e => fun st => if e st then ret (inr st) else ret (inl tt)
   end.
-
-Import MonadNotation.
-Local Open Scope monad_scope.
 
 Fixpoint tree_to_sampler {A : Type}
          (f : nat -> bool) (t : tree A) (env : nat -> tree A) (n : nat)
@@ -98,22 +105,7 @@ Definition tree_to_sampler' {A : Type} (f : nat -> bool) (t : tree A) (n : nat)
   : state nat (unit + A) :=
   tree_to_sampler f t (const (Fail _ O)) n.
 
-
-Definition tie_itree {A : Type} (k : ktree biasedE A (unit + A))
-  : ktree biasedE A A :=
-  fun x => Basics.iter (map (fun y => match y with
-                                | inl tt => inl x
-                                | inr x' => inr x'
-                                end) k) x.
-
-Definition compile_itree' (c : cpGCL) : ktree biasedE St St :=
-  tie_itree (compile_itree c).
-
-
 (** Inductive trees to itrees. *)
-
-Definition diverge {E : Type -> Type} {A : Type} : itree E A :=
-  Basics.iter (ret ∘ inl) tt.
 
 Fixpoint tree_to_itree {A : Type} (t : tree A) : itree biasedE (nat + A) :=
   match t with
@@ -123,97 +115,16 @@ Fixpoint tree_to_itree {A : Type} (t : tree A) : itree biasedE (nat + A) :=
     Vis (GetBiased p) (fun b => if b : bool
                              then tree_to_itree t2
                              else tree_to_itree t1)
-  | Fix lbl t1 => Basics.iter (fun _ => x <- tree_to_itree t1 ;;
-                                    match x with
-                                    | inl n =>
-                                      if n =? lbl
-                                      then ret (inl tt)
-                                      else ret (inr (inl n))
-                                    | inr y =>
-                                      ret (inr (inr y))
-                                    end) tt
+  | Fix lbl t1 => ITree.iter (fun _ => x <- tree_to_itree t1 ;;
+                                   match x with
+                                   | inl n =>
+                                     if n =? lbl
+                                     then ret (inl tt)
+                                     else ret (inr (inl n))
+                                   | inr y =>
+                                     ret (inr (inr y))
+                                   end) tt
   end.
-
-Definition tie_itree' {A : Type} {E : Type -> Type} (t : itree E (nat + A)) 
-  : itree E A :=
-  Basics.iter (fun _ => x <- t ;;
-                     match x with
-                     | inl _ => ret (inl tt)
-                     | inr y => ret (inr y)
-                     end) tt.
-
-Definition tree_to_itree' {A : Type} (t : tree A) : itree biasedE A :=
-  tie_itree' (tree_to_itree t).
-
-(** [sample t P bs] means that itree [t] produces a sample in [P]
-    given [bs] as input. We require that [bs] be nil at leaf nodes so
-    that any two distinct bit sequence that produce samples represent
-    disjoint intervals. *)
-Inductive sample {A : Type} :
-  itree unbiasedE A -> (A -> Prop) -> list bool -> Prop :=
-| sample_ret : forall t (P : A -> Prop) x,
-    observe t = RetF x ->
-    P x ->
-    sample t P nil
-| sample_tau : forall t t' P bs,
-    observe t = TauF t' ->
-    sample t' P bs ->
-    sample t P bs
-| sample_vis_false : forall t t1 bs P k,
-    observe t = VisF GetUnbiased k ->
-    k false = t1 ->
-    sample t1 P bs ->
-    sample t P (false :: bs)
-| sample_vis_true : forall t t2 bs P k,
-    observe t = VisF GetUnbiased k ->
-    k true = t2 ->
-    sample t2 P bs ->
-    sample t P (true :: bs).
-
-(** Step-indexed version of [sample]. [sample_n t P bs n] means that
-  itree [t] produces a sample in [P] given [bs] as input in at most
-  [n] steps. *)
-Inductive sample_n {A : Type} :
-  itree unbiasedE A -> (A -> Prop) -> list bool -> nat -> Prop :=
-| sample_n_ret : forall t (P : A -> Prop) x n,
-    observe t = RetF x ->
-    P x ->
-    sample_n t P nil n
-| sample_n_tau : forall t t' P bs n,
-    observe t = TauF t' ->
-    sample_n t' P bs n ->
-    sample_n t P bs (S n)
-| sample_n_vis_false : forall t t1 bs P n k,
-    observe t = VisF GetUnbiased k ->
-    k false = t1 ->
-    sample_n t1 P bs n ->
-    sample_n t P (false :: bs) (S n)
-| sample_n_vis_true : forall t t2 bs P n k,
-    observe t = VisF GetUnbiased k ->
-    k true = t2 ->
-    sample_n t2 P bs n ->
-    sample_n t P (true :: bs) (S n).
-
-Definition sample_sample_n {A : Type}
-           (t : itree unbiasedE A) (P : A -> Prop) (bs : list bool) :
-  sample t P bs <-> exists n, sample_n t P bs n.
-Proof.
-  split.
-  - induction 1.
-    + exists O; eapply sample_n_ret; eauto.
-    + destruct IHsample as [n IH].
-      exists (S n); eapply sample_n_tau; eauto.
-    + destruct IHsample as [n IH].
-      exists (S n); eapply sample_n_vis_false; eauto.
-    + destruct IHsample as [n IH].
-      exists (S n); eapply sample_n_vis_true; eauto.
-  - intros [n Hsample].
-    induction Hsample.
-    + eapply sample_ret; eauto.
-    + eapply sample_tau; eauto.
-    + eapply sample_vis_false; eauto.
-    + eapply sample_vis_true; eauto.
-Qed.
 
 (** The preimage of a set of samples [P] wrt itree [t] is the set of
     bit sequences [bs] such that [sample t bs P]. *)
@@ -221,17 +132,11 @@ Definition preimage {A : Type} (t : itree unbiasedE A) (P : A -> Prop)
   : list bool -> Prop :=
   sample t P.
 
-
-(* Definition preimage' {A : Type} (t : itree unbiasedE A) (P : A -> Prop) *)
-(*   : list bool -> Prop := *)
-(*   fun bs => exists n, sample_n t P bs n. *)
-
 Require Import List.
 Import ListNotations.
-Require Import Nat.
 
-Fixpoint sample_nb {A : Type}
-         (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) (n : nat) : bool :=
+Fixpoint sample_nb {A : Type} (P : A -> bool)
+         (t : itree unbiasedE A) (bs : list bool) (n : nat) : bool :=
   match n with
   | O =>
     match observe t with
@@ -249,13 +154,13 @@ Fixpoint sample_nb {A : Type}
       | [] => P x
       | _ => false
       end
-    | TauF t' => sample_nb t' P bs n'
+    | TauF t' => sample_nb P t' bs n'
     | VisF e k =>
       match e in unbiasedE T return (T -> itree unbiasedE A) -> bool with
       | GetUnbiased =>
         fun f => match bs with
               | [] => false
-              | b :: bs' => sample_nb (f b) P bs' n'
+              | b :: bs' => sample_nb P (f b) bs' n'
               end
       end k
     end
@@ -267,43 +172,9 @@ Lemma VisF_inversion {A B : Type} e (f g : bool -> itree unbiasedE B) :
   f = g.
 Proof.
   intro Heq; inversion Heq.
-  apply inj_pair2 in H0; auto.
+  apply Classical_Prop.EqdepTheory.inj_pair2 in H0; auto.
 Qed.
 
-Lemma sample_nb_spec {A : Type}
-      (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) (n : nat)
-  : reflect (sample_n t P bs n) (sample_nb t P bs n).
-Proof.
-  revert t bs.
-  induction n; intros t bs; simpl.
-  - destruct (observe t) eqn:Ht.
-    + destruct (P r) eqn:HP; destruct bs; constructor.
-      * econstructor; eauto.
-      * intro HC; inversion HC.
-      * intro HC; inversion HC; congruence.
-      * intro HC; inversion HC; congruence.
-    + constructor; intro HC; inversion HC; congruence.
-    + constructor; intro HC; inversion HC; congruence.
-  - destruct (observe t) eqn:Ht.
-    + destruct (P r) eqn:HP; destruct bs; constructor.
-      * econstructor; eauto.
-      * intro HC; inversion HC; congruence.
-      * intro HC; inversion HC; congruence.
-      * intro HC; inversion HC; congruence.
-    + destruct (IHn t0 bs); constructor.
-      * econstructor; eauto.
-      * intro HC; inversion HC; congruence.
-    + destruct e.
-      destruct bs.
-      * constructor; intro HC; inversion HC; congruence.
-      * destruct (IHn (k b) bs); constructor.
-        -- destruct b.
-           ++ eapply sample_n_vis_true; eauto.
-           ++ eapply sample_n_vis_false; eauto.
-        -- intro HC; inversion HC; subst; try congruence;
-             rewrite Ht in H4; apply VisF_inversion in H4; subst; congruence.
-Qed.
-      
 Lemma sample_n_S {A : Type}
       (t : itree unbiasedE A) (P : A -> Prop) (bs : list bool) (n : nat) :
   sample_n t P bs n -> sample_n t P bs (S n).
@@ -314,55 +185,6 @@ Proof.
   - econstructor; eauto.
   - eapply sample_n_vis_false; eauto.
   - eapply sample_n_vis_true; eauto.
-Qed.
-
-Lemma sample_n_decidableb {A : Type}
-      (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) :
-  forall n, sample_n t P bs n \/ ~ sample_n t P bs n.
-Proof. intro n; destruct (sample_nb_spec t P bs n); auto. Qed.
-
-Lemma sample_n_bool_sumbool {A : Type}
-      (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) :
-  forall n, {sample_n t P bs n} + {~ sample_n t P bs n}.
-Proof. intro n; destruct (sample_nb_spec t P bs n); auto. Defined.
-
-Lemma sample_n_decidable {A : Type}
-      (t : itree unbiasedE A) (P : A -> Prop) (bs : list bool) :
-  (forall x, P x \/ ~ P x) ->
-  forall n, sample_n t P bs n \/ ~ sample_n t P bs n.
-Proof.
-  intros Hdec n.
-  revert t bs. induction n; intros t bs.
-  - destruct (observe t) eqn:Ht;
-      try (right; intro HC; inversion HC; subst; rewrite Ht in H; congruence).
-    destruct bs; destruct (Hdec r);
-      try solve [left; eapply sample_n_ret; eauto];
-      right; intro HC; inversion HC; subst.
-    rewrite Ht in H0; inversion H0; subst; congruence.
-  - destruct (IHn t bs).
-    + left; apply sample_n_S; auto.
-    + destruct (observe t) eqn:Ht.
-      * destruct (Hdec r); destruct bs;
-          try (right; intro HC; inversion HC; subst; congruence);
-          left; econstructor; eauto.
-      * destruct (IHn t0 bs).
-        -- left; econstructor; eauto.
-        -- right; intro HC; inversion HC; subst; congruence.
-      * destruct e; destruct bs.
-        -- right; intro HC; inversion HC; subst; congruence.
-        -- destruct b.
-           ++ destruct (IHn (k true) bs).
-              ** left; eapply sample_n_vis_true; eauto.
-              ** right; intro HC; inversion HC; subst.
-                 { congruence. }
-                 { rewrite Ht in H3; apply VisF_inversion in H3;
-                     subst; congruence. }
-           ++ destruct (IHn (k false) bs).
-              ** left; eapply sample_n_vis_false; eauto.
-              ** right; intro HC; inversion HC; subst.
-                 { congruence. }
-                 { rewrite Ht in H3; apply VisF_inversion in H3;
-                     subst; congruence. }
 Qed.
 
 Lemma sample_n_sumbool {A : Type}
@@ -404,51 +226,6 @@ Proof.
                      subst; congruence. }
 Qed.
 
-(* (** Boolean version of preimage. Coincides with the propositional *)
-(*     version for trees with no Tau nodes. *) *)
-(* Fixpoint preimageb {A : Type} *)
-(*          (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) : bool := *)
-(*   match _observe t with *)
-(*   | RetF x => *)
-(*     match bs with *)
-(*     | [] => P x *)
-(*     | _ => false *)
-(*     end *)
-(*   | VisF e k => *)
-(*     (* Convoy pattern. *) *)
-(*     match e in unbiasedE T return (T -> itree unbiasedE A) -> bool with *)
-(*     | GetUnbiased => *)
-(*       fun f => match bs with *)
-(*             | [] => false *)
-(*             | b :: bs' => preimageb (f b) P bs' *)
-(*             end *)
-(*     end k *)
-(*   | _ => false *)
-(*   end. *)
-
-(** Maybe preimageb can be factored into two parts: one that is just a
-    sampler function that uses a finite list of bits as input and
-    produces an option result, then we just return true if it returns
-    a result and that result is in P. *)
-
-(** I guess the problem with that approach is that it's a bit
-    unnatural to disallow overdetermined bit sequences. *)
-
-(* Fixpoint walk_path {A : Type} (t : itree unbiasedE A) (bs : list bool) *)
-(*   : option (itree unbiasedE A) := *)
-(*   match bs with *)
-(*   | [] => Some t *)
-(*   | b :: bs' => *)
-(*     match observe t with *)
-(*     | VisF e k => *)
-(*       match e in unbiasedE T return *)
-(*             (T -> itree unbiasedE A) -> option (itree unbiasedE A) with *)
-(*       | GetUnbiased => fun f => walk_path (f b) bs' *)
-(*       end k *)
-(*     | _ => None *)
-(*     end *)
-(*   end. *)
-
 Fixpoint walk_path {A : Type} (t : itree unbiasedE A) (bs : list bool) (n : nat)
   : option (itree unbiasedE A) :=
   match n with
@@ -483,35 +260,6 @@ Fixpoint exists_tau {A : Type} (t : itree unbiasedE A) (n : nat) : bool :=
     end
   end.
 
-(** Reduce any finite sequence of Taus to a single one. Any infinite
-    sequence of Taus is unchanged. *)
-CoFixpoint remove_taus {E : Type -> Type} {A : Type} (t : itree E A)
-  : itree E A :=
-  match t with
-  | Ret x => Ret x
-  | Vis e k => Vis e (fun x => remove_taus (k x))
-  | Tau (Tau t') => Tau (remove_taus t')
-  | Tau t' => Tau t'
-  end.
-
-(* Fixpoint partial_sample {A : Type} (t : itree unbiasedE A) (bs : list bool) *)
-(*   : option A := *)
-(*   match bs with *)
-(*   | [] => *)
-(*     match observe t with *)
-(*     | RetF x => Some x *)
-(*     | _ => None *)
-(*     end *)
-(*   | b :: bs' => *)
-(*     match observe t with *)
-(*     | VisF e k => *)
-(*       match e in unbiasedE T return (T -> itree unbiasedE A) -> option A with *)
-(*       | GetUnbiased => fun f => partial_sample (f b) bs' *)
-(*       end k *)
-(*     | _ => None *)
-(*     end *)
-(*   end. *)
-
 (** Will tree [t] either run out of bits in [bs] or successfully
     produce a sample within [n] steps? *)
 Inductive terminates {A : Type} : itree unbiasedE A -> list bool -> nat -> Prop :=
@@ -532,54 +280,6 @@ Inductive terminates {A : Type} : itree unbiasedE A -> list bool -> nat -> Prop 
     observe t = VisF GetUnbiased (fun b => if b : bool then t2 else t1) ->
     terminates t2 bs n ->
     terminates t (true :: bs) (S n).
-
-(* Fixpoint partial_sample {A : Type} (t : itree unbiasedE A) (bs : list bool) (n : nat) *)
-(*   : option A := *)
-(*   match n with *)
-(*   | O => None *)
-(*   | S n' => *)
-(*     match bs with *)
-(*     | [] => *)
-(*       match observe t with *)
-(*       | RetF x => Some x *)
-(*       | _ => None *)
-(*       end *)
-(*     | b :: bs' => *)
-(*       match observe t with *)
-(*       | VisF e k => *)
-(*         match e in unbiasedE T return (T -> itree unbiasedE A) -> option A with *)
-(*         | GetUnbiased => fun f => partial_sample (f b) bs' n' *)
-(*         end k *)
-(*       | TauF t' => partial_sample t' bs n' *)
-(*       | _ => None *)
-(*       end *)
-(*     end *)
-(*   end. *)
-
-(* Definition preimageb' {A : Type} *)
-(*            (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) : bool := *)
-(*   match partial_sample t bs (length bs * 100) with *)
-(*   | None => false *)
-(*   | Some x => P x *)
-(*   end. *)
-
-(* Lemma preimageb_spec {A : Type} *)
-(*       (t : itree unbiasedE A) (P : A -> bool) (bs : list bool) *)
-(*   : reflect (preimage t (fun x => P x = true) bs) (preimageb t P bs). *)
-(* Proof. *)
-(*   destruct (_observe t) eqn:H. *)
-(*   - destruct bs. *)
-(*     + simpl. rewrite H. *)
-(*       destruct (P r); constructor. *)
-(*       assert (t = Ret r). *)
-(*       {  *)
-      
-      
-
-(* Definition measure (bs : list bool) : Q := *)
-(*   1 / (Q.Qpow 2 (length bs)). *)
-
-(* Eval compute in (measure [false; true]). *)
 
 Definition bit_sequences : nat -> list bool :=
   fun n => removelast (nat_binary (S n)).
@@ -666,14 +366,14 @@ Proof.
   - apply last_element_nat_binary; lia.
 Qed.
 
-(* Eval compute in (prefix bit_sequences 5). *)
-(* Eval compute in (map bit_sequences_inverse (prefix bit_sequences 10)). *)
-
-(* Definition measure_seq' {A : Type} *)
-(*            (t : itree unbiasedE A) (P : A -> bool) (n : nat) : Q := *)
-(*   if preimageb' t P (bit_sequences n) *)
-(*   then interval_measure (bit_sequences n) *)
-(*   else 0. *)
+Lemma bit_sequences_nil_O n :
+  bit_sequences n = [] ->
+  n = O.
+Proof.
+  intro H; eapply inj_spec.
+  - apply bit_sequences_left_inverse.
+  - rewrite H; reflexivity.
+Qed.
 
 Lemma is_true_dec {A : Type} (P : A -> bool) :
   forall x, is_true (P x) \/ ~ is_true (P x).
@@ -683,20 +383,15 @@ Lemma is_true_sumbool {A : Type} (P : A -> bool) :
   forall x, {is_true (P x)} + {~ is_true (P x)}.
 Proof. intro x; destruct (P x); intuition. Defined.
 
-(** LPO version of measure_seq (assuming decidability of termination). *)
+(* (** LPO version of measure_seq (assuming decidability of termination). *) *)
 Definition measure_seq {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) (n : nat) : Q :=
   let bs := bit_sequences n in
-  if strong_LPO (sample_n t (fun x => is_true (P x)) bs)
-                (sample_n_sumbool t (fun x => is_true (P x))
-                                  bs (is_true_sumbool P))
+  if strong_LPO (* (sample_n (fun x => is_true (P x)) t bs) *)
+       (sample_n_sumbool t (fun x => is_true (P x))
+                         bs (is_true_sumbool P))
   then interval_measure bs
   else 0.
-
-Definition measure_chain {A : Type}
-           (t : itree unbiasedE A) (P : A -> bool) (n : nat) : Q :=
-  partial_sum (measure_seq t P) n.
-
 
 (** Purely propositional version. *)
 
@@ -710,16 +405,6 @@ Inductive measure_seqP {A : Type}
     preimage t P (bit_sequences n) ->
     q == interval_measure (bit_sequences n) ->
     measure_seqP t P n q.
-
-(* Inductive measure_chainP {A : Type} *)
-(*   : itree unbiasedE A -> (A -> Prop) -> nat -> Q -> Prop := *)
-(* | measure_chain_O : forall t P q, *)
-(*     measure_seqP t P O q -> *)
-(*     measure_chainP t P O q *)
-(* | measure_chain_S : forall t P n p q, *)
-(*     measure_chainP t P n p -> *)
-(*     measure_seqP t P (S n) q -> *)
-(*     measure_chainP t P (S n) (p + q). *)
 
 Definition measure_chainP {A : Type}
            (t : itree unbiasedE A) (P : A -> Prop) : nat -> Q -> Prop :=
@@ -744,23 +429,6 @@ Definition preimage_measure {A : Type}
            (t : itree unbiasedE A) (P : A -> Prop) (m : Q) : Prop :=
   supremumP m (measure_chainP t P).
 
-Definition preimage_measure' {A : Type}
-           (t : itree unbiasedE A) (P : A -> bool) (m : Q) : Prop :=
-  supremum m (measure_chain t P).
-
-Lemma measure_seq_spec {A : Type}
-      (t : itree unbiasedE A) (P : A -> bool) :
-  f_relation (measure_seq t P) (measure_seqP t (fun x => is_true (P x))).
-Proof.
-  intro n.
-  unfold measure_seq. simpl.
-  destruct_LPO.
-  - apply measure_seq_true; try reflexivity.
-    apply sample_sample_n; auto.
-  - apply measure_seq_false; try lra.
-    intro HC; apply sample_sample_n in HC; congruence.
-Qed.
-
 Instance Proper_measure_seqP {A : Type} (t : itree unbiasedE A) (P : A -> Prop)
   : Proper (eq ==> Qeq ==> iff) (measure_seqP t P).
 Proof.
@@ -768,121 +436,234 @@ Proof.
   split; intro H; inversion H; subst; solve [constructor; auto; lra].
 Qed.
 
-(* Lemma measure_chain_spec {A : Type} *)
-(*       (t : itree unbiasedE A) (P : A -> bool) (n : nat) : *)
-(*   measure_chainP t (fun x => is_true (P x)) n (measure_chain t P n). *)
-(* Proof. *)
-(*   unfold measure_chainP. *)
-(*   unfold measure_chain. *)
-(*   apply partial_sum_spec. *)
-(*   apply measure_seq_spec. *)
-(*   apply Proper_measure_seqP. *)
-(* Qed. *)
+Definition tie_itree {A : Type} {E : Type -> Type} (t : itree E (unit + A)) (lbl : nat)
+  : itree E A :=
+  ITree.iter (const t) tt.
 
-(** TODO *)
-(* Lemma preimage_measure_spec {A : Type} *)
-(*       (t : itree unbiasedE A) (P : A -> bool) (m : Q) : *)
-(*   preimage_measure t P m <-> preimage_measure' t P m. *)
-(* Proof. *)
-(*   split; intro H. *)
-(*   - unfold preimage_measure in H. *)
-(*     unfold preimage_measure'. *)
-(*     unfold supremum. *)
-(*     unfold supremumP in H. *)
-
-(* Eval compute in (first_n bit_sequences 31). *)
-
-(* Eval compute in (first_n measure_chain' 10). *)
-(* Eval compute in (map Qred (first_n (partial_sum measure_chain') 100)). *)
-
-Fixpoint unbiased_tree_to_itree {A : Type} (t : tree A)
-  : itree unbiasedE (nat + A) :=
-  match t with
-  | Leaf x => ret (inr x)
-  | Fail _ l => ret (inl l)
-  | Choice _ t1 t2 =>
-    Vis GetUnbiased (fun b => if b : bool
-                           then unbiased_tree_to_itree t2
-                           else unbiased_tree_to_itree t1)
-  | Fix l t1 => Basics.iter (fun _ => x <- unbiased_tree_to_itree t1 ;;
-                                  match x with
-                                  | inl n =>
-                                    if n =? l
-                                    then ret (inl tt)
-                                    else ret (inr (inl n))
-                                  | inr y =>
-                                    ret (inr (inr y))
-                                  end) tt
-  end.
-
-Definition unbiased_tree_to_itree' {A : Type} (t : tree A) : itree unbiasedE A :=
-  tie_itree' (unbiased_tree_to_itree t).
-
-(* (** *) *)
-(* Lemma preimage_measure_infer {A : Type} (t : tree A) (P : A -> bool) : *)
-(*   preimage_measure (unbiased_tree_to_itree' t) P *)
-(*                    (infer (fun x => if P x then 1 else 0) t). *)
-(* Admitted. *)
+Definition itree_topdown_lang {A : Type}
+           (t : itree unbiasedE A) (P : A -> bool) (n : nat) : option (list bool) :=
+  let bs := bit_sequences n in
+  if (strong_LPO (sample_n_sumbool t (fun x => is_true (P x))
+                                   bs (is_true_sumbool P)))
+  then Some bs
+  else None.
 
 Definition meas_seq {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) (n : nat) : meas :=
-  let bs := bit_sequences n in
-  if (strong_LPO (sample_n t (fun x => is_true (P x)) bs)
-                 (sample_n_sumbool t (fun x => is_true (P x))
-                                   bs (is_true_sumbool P)))
-  then meas_interval bs
-  else meas_empty.
+  match itree_topdown_lang t P n with
+  | Some bs => meas_interval bs
+  | None => meas_empty
+  end.
 
-(* Definition meas_seq' {A : Type} *)
-(*            (t : itree unbiasedE A) (P : A -> bool) : nat -> meas := *)
-(*   (fun bs => if (strong_LPO (sample_n t (fun x => is_true (P x)) bs) *)
-(*                          (sample_n_sumbool t (fun x => is_true (P x)) *)
-(*                                            bs (is_true_sumbool P))) *)
-(*           then meas_interval bs *)
-(*           else meas_empty) ∘ bit_sequences. *)
+Definition measure_seq' {A : Type}
+           (t : itree unbiasedE A) (P : A -> bool) : nat -> Q :=
+  option_measure ∘ itree_topdown_lang t P.
 
-(* Lemma meas_seq_meas_seq' {A : Type} (t : itree unbiasedE A) (P : A -> bool) (n : nat) : *)
-(*   meas_seq t P n = meas_seq' t P n. *)
-(* Proof. reflexivity. Qed. *)
+(* Weird thought: any infinite object can be represented, instead of
+   by explicit coinduction, by a nat-indexed function of finite
+   approximations. E.g., an infinite tree can be taken to be the
+   "limit" of a function from a nat n to the nth finite approximation
+   of the tree. A proof of a property of the tree could then proceed
+   by 1) proving it for all finite approximations (by induction on n),
+   and 2) showing that the property is continuous in that it preserves
+   suprema (i.e., P(supf) iff forall n, P(f n). We are still using
+   induction to prove a universal property (for all nats), it only
+   amounts to an "existential" property about a particular infinite
+   tree (the infinite nature of the tree "uses up" all of the
+   universality of the nat induction). Is there a way to do some kind
+   of transfinite induction or something similar, in a sense to gain
+   "more universality", to prove universal properties of *all*
+   elements of a coinductive type (or a countable subset)? *)
+
+Lemma seq_nodup_topdown_lang {A : Type} (t : itree unbiasedE A) (P : A -> bool) :
+  seq_nodup (itree_topdown_lang t P).
+Proof.
+  intros i j x Hnz H0 H1.
+  unfold itree_topdown_lang in *.
+  unfold equiv, zero in Hnz; simpl in Hnz.
+  repeat destruct_LPO; try congruence.
+  clear Hnz e0 e.
+  rewrite <- H0 in H1; inversion H1; subst; clear H1.
+  eapply inj_spec; eauto.
+  apply bit_sequences_left_inverse.
+Qed.
+
+Lemma itree_lang_topdown_lang {A : Type} (t : itree unbiasedE A) (P : A -> bool) :
+  itree_lang (is_true ∘ P) t (itree_topdown_lang t P).
+Proof.
+  revert t.
+  unfold compose.
+  pcofix CH; intro t.
+  unfold itree_topdown_lang in *.
+  pstep. unfold itree_lang_.
+  destruct (observe t) eqn:Ht.
+  - destruct (P r0) eqn:Hr0.
+    + apply itree_langF_ret_true; auto.
+      split.
+      * unfold seq_injection_upto_0.
+        exists id, id.
+        intros i HC.
+        split; auto.
+        destruct_LPO.
+        -- apply sample_sample_n in e.
+           inversion e; subst; try solve[inversion Ht]; try congruence.
+           symmetry in H. apply bit_sequences_nil_O in H; subst.
+           reflexivity.
+        -- exfalso; apply HC; reflexivity.
+      * unfold seq_injection_upto_0.
+        exists id, id. unfold id.
+        intros i HC.
+        split; auto.
+        destruct_LPO.
+        -- apply sample_sample_n in e.
+           inversion e; subst; try solve[inversion Ht]; try congruence.
+           symmetry in H; apply bit_sequences_nil_O in H; subst.
+           reflexivity.
+        -- apply singleton_seq_nonzero in HC; subst.
+           exfalso; apply n.
+           apply sample_sample_n.
+           econstructor; eauto.
+    + assert (H: (fun n : nat =>
+                    if
+                      strong_LPO
+                        (sample_n_sumbool t (fun x : A => is_true (P x))
+                                          (bit_sequences n) (is_true_sumbool P))
+                    then Some (bit_sequences n)
+                    else None) === seq_zero).
+      { split; exists id, id; intros i Hnz; unfold id;
+          split; auto; unfold equiv, seq_zero, const; destruct_LPO; auto;
+            destruct e as [n HC]; inversion HC; subst; congruence. }
+      rewrite H.
+      apply itree_langF_ret_false; unfold is_true; congruence.
+  - econstructor; eauto.
+    split; exists id, id; intros i Hnz; split; auto; unfold id in *.
+    + destruct_LPO; destruct_LPO.
+      * reflexivity.
+      * exfalso. apply n.
+        destruct e as [m H0].
+        exists (S m). econstructor; eauto.
+      * exfalso; apply Hnz; reflexivity.
+      * reflexivity.
+    + destruct_LPO; destruct_LPO.
+      * reflexivity.
+      * exfalso. apply n.
+        destruct e as [m H0].
+        inversion H0; subst; try solve[inversion Ht]; try congruence.
+        rewrite Ht in H. inversion H; subst.
+        eexists; eauto.
+      * exfalso; apply Hnz; reflexivity.
+      * reflexivity.
+  - destruct e.
+    eapply itree_langF_vis.
+    { right; apply CH. }
+    { right; apply CH. }
+    clear CH.
+    split.
+    + exists (fun n => match bit_sequences n with
+               | true :: bs => (bit_sequences_inverse bs * 2)%nat
+               | false :: bs => (bit_sequences_inverse bs * 2 + 1)%nat
+               | nil => O
+               end).
+      exists (fun n => match n mod 2 with
+               | O => bit_sequences_inverse (true :: bit_sequences (n / 2)%nat)
+               | S _ => bit_sequences_inverse (false :: bit_sequences (n / 2)%nat)
+               end).
+      unfold equiv, zero.
+      intros i Hnz; simpl in Hnz; split.
+      * destruct_LPO; try congruence; clear Hnz.
+        destruct e as [n Hsample].
+        destruct (bit_sequences i) eqn:Hi.
+        -- inversion Hsample; congruence.
+        -- destruct b.
+           ++ rewrite Nat.mod_mul; auto.
+              rewrite Nat.div_mul; auto.
+              rewrite bit_sequences_right_inverse.
+              rewrite <- Hi, bit_sequences_left_inverse; reflexivity.
+           ++ rewrite plus_comm, Nat.mod_add; auto.
+              replace ((1 + bit_sequences_inverse l * 2) / 2)%nat with
+                  ((Nat.b2n true + bit_sequences_inverse l * 2) / 2)%nat by reflexivity.
+              rewrite mult_comm.
+              rewrite (Nat.add_b2n_double_div2 true (bit_sequences_inverse l)).
+              simpl.
+              rewrite bit_sequences_right_inverse.
+              rewrite <- Hi, bit_sequences_left_inverse; reflexivity.
+      * destruct_LPO; try congruence; clear Hnz.
+        destruct e as [n Hsample].
+        unfold compose, seq_union.
+        destruct (bit_sequences i) eqn:Hi.
+        { inversion Hsample; try congruence. }
+        destruct b.
+        -- rewrite Nat.mod_mul; auto.
+           rewrite Nat.div_mul; auto.
+           rewrite bit_sequences_right_inverse.
+           destruct_LPO; auto.
+           exfalso; apply n0; inversion Hsample; subst; try congruence.
+           rewrite Ht in H0; inversion H0.
+           apply Eqdep.EqdepTheory.inj_pair2 in H1; subst.
+           exists n1; auto.
+        -- rewrite plus_comm, Nat.mod_add; auto.
+           replace ((1 + bit_sequences_inverse l * 2) / 2)%nat with
+               ((Nat.b2n true + bit_sequences_inverse l * 2) / 2)%nat by reflexivity.
+           rewrite mult_comm.
+           rewrite (Nat.add_b2n_double_div2 true (bit_sequences_inverse l)).
+           rewrite bit_sequences_right_inverse.
+           simpl.
+           destruct_LPO; auto.
+           exfalso; apply n0; inversion Hsample; subst; try congruence.
+           rewrite Ht in H0; inversion H0.
+           apply Eqdep.EqdepTheory.inj_pair2 in H1; subst.
+           exists n1; auto.
+    + exists (fun n => match n mod 2 with
+               | O => bit_sequences_inverse (true :: bit_sequences (n / 2)%nat)
+               | S _ => bit_sequences_inverse (false :: bit_sequences (n / 2)%nat)
+               end).
+      exists (fun n => match bit_sequences n with
+               | true :: bs => (bit_sequences_inverse bs * 2)%nat
+               | false :: bs => (bit_sequences_inverse bs * 2 + 1)%nat
+               | nil => O
+               end).
+      unfold equiv, zero.
+      intros i Hnz; simpl in Hnz; split.
+      * destruct (mod_2_dec i) as [Hmod | Hmod]; rewrite Hmod.
+        -- rewrite bit_sequences_right_inverse.
+           rewrite bit_sequences_left_inverse.
+           rewrite mult_comm.
+           apply mod_n_div; auto.
+        -- rewrite bit_sequences_right_inverse.
+           rewrite bit_sequences_left_inverse.
+           rewrite mult_comm.
+           apply mod_n_div_plus_1; auto.
+      * unfold seq_union in *.
+        destruct (mod_2_dec i) as [Hmod | Hmod]; rewrite Hmod in *;
+          unfold compose in *; rewrite bit_sequences_right_inverse;
+            repeat destruct_LPO; auto; simpl in Hnz; try congruence;
+              destruct e as [m HC]; exfalso; apply n.
+        -- exists (S m); eapply sample_n_vis_true; eauto.
+        -- exists (S m); eapply sample_n_vis_false; eauto.
+Qed.
+
+Definition tree_lang_meas {A : Type}
+           (t : tree A) (P : A -> bool) (lbl n : nat) : meas :=
+  match tree_sequence t P lbl n with
+  | Some bs => meas_interval bs
+  | None => meas_empty
+  end.
+
+(* Definition tree_lang_measures {A : Type} *)
+(*            (t : tree A) (P : A -> bool) (lbl n : nat) : Q := *)
+(*   match tree_sequence t P lbl n with *)
+(*   | Some bs => interval_measure bs *)
+(*   | None => 0 *)
+(*   end. *)
 
 (** The preimage of a set P under itree t is a measurable set. *)
 Definition preimage_meas {A : Type}
            (t : itree unbiasedE A) (P : A -> bool) : meas :=
   meas_union (meas_seq t P).
 
-(* Lemma sample_n_deterministic {A : Type} *)
-(*       (t : itree unbiasedE A) (P : A -> bool) (bs bs' : list bool) (n m : nat) : *)
-(*   sample_n t P bs n -> *)
-(*   sample_n t P bs' m -> *)
-(*   bs = bs'. *)
-(* Proof. *)
-(*   intro H. revert m bs'. induction H; intros m bs' Hsample. *)
-(*   (* induction 1; intro Hsample. *) *)
-(*   - inversion Hsample; subst; auto; congruence. *)
-(*   - inversion Hsample; subst; try congruence. *)
-(*     rewrite H in H1; inversion H1; subst. *)
-(*     eapply IHsample_n; eauto. *)
-(*   - inversion Hsample; subst; try congruence. *)
-(*     + rewrite H in H2. *)
-(*       apply VisF_inversion in H2; subst. *)
-(*       f_equal. *)
-(*       eapply IHsample_n; eauto. *)
-(*     + rewrite H in H2. *)
-(*       apply VisF_inversion in H2; subst.   *)
-(*     admit. *)
-(*   - admit. *)
-(* Admitted. *)
-
-(* Inductive test := *)
-(* | test_f : (nat -> nat) -> test. *)
-
-(* Lemma test_inv (f g : nat -> nat) : *)
-(*   test_f f = test_f g -> *)
-(*   f = g. *)
-(* Proof. *)
-(*   intro H. *)
-(*   inversion H; auto. *)
-(* Qed. *)
+Definition preimage_tree_lang_meas {A : Type}
+           (t : tree A) (P : A -> bool) (lbl : nat) : meas :=
+  meas_union (tree_lang_meas t P lbl).
 
 Lemma sample_n_is_prefix_eq {A : Type}
       (t : itree unbiasedE A) (P Q : A -> Prop) (l1 l2 : list bool) (n m : nat) :
@@ -922,6 +703,20 @@ Proof.
   - eapply sample_n_is_prefix_eq; eauto.
   - symmetry; eapply sample_n_is_prefix_eq; eauto.
 Qed.
+
+(* Lemma itree_lang_comparable_eq {A : Type} *)
+(*       (t : itree unbiasedE A) (P Q : A -> Prop) (l1 l2 : list bool)  : *)
+(*   comparable l1 l2 -> *)
+(*   in_itree_lang P t l1 -> *)
+(*   in_itree_lang Q t l2 -> *)
+(*   l1 = l2. *)
+(* Proof. *)
+(*   intros Hcomp H0 H1. *)
+(*   apply is_prefix_comparable in Hcomp. *)
+(*   destruct Hcomp. *)
+(*   - eapply in_itree_lang_is_prefix_eq; eauto. *)
+(*   - symmetry; eapply in_itree_lang_is_prefix_eq; eauto. *)
+(* Qed. *)
 
 Inductive last_element_same {A : Type} : list A -> list A -> Prop :=
 | last_element_same_x : forall x,
@@ -1131,7 +926,7 @@ Lemma meas_seq_disjoint {A : Type}
   i <> j ->
   borel.disjoint (meas_seq t P i) (meas_seq t P j).
 Proof.
-  intro Hneq; unfold meas_seq.
+  intro Hneq; unfold meas_seq, itree_topdown_lang.
   repeat destruct_LPO; try constructor.
   destruct e as [n H0].
   destruct e0 as [m H1].
@@ -1142,41 +937,107 @@ Proof.
   apply bit_sequences_inj in HC; congruence.
 Qed.
 
-Lemma seq_bijection_tree_sequence_measure_seq {A : Type} (P : A -> bool) (t : tree A) (n : nat) :
-  seq_bijection (option_measure ∘ tree_sequence t P n) (measure_seq (unbiased_tree_to_itree' t) P).
+Lemma measure_seq_measure_seq' {A : Type} (t : itree unbiasedE A) (P : A -> bool) :
+  forall i, measure_seq t P i = measure_seq' t P i.
 Proof.
-  unfold tree_sequence.
-  unfold measure_seq. simpl. unfold compose.
-  
-  (** IDEA: maybe show something like "for all bitstrings, there
-            exists a fuel parameter sufficient to produce a sample
-            using that bitstring iff it's in the regular language
-            denoted by the tree". *)
-  (* revert n. *)
-  (* induction t; intro m. *)
-  (* - unfold compose. *)
-  (*   unfold tree_sequence. simpl. *)
-  (*   unfold unbiased_tree_to_itree'. simpl. unfold tie_itree'.  *)
-  (*   simpl. *)
-  (*   unfold ITree.bind'. simpl. *)
+  unfold measure_seq, measure_seq', compose, itree_topdown_lang.
+  intro i; destruct_LPO; auto.
+Qed.
 
-Admitted.
+Instance Proper_option_measure : Proper (equiv ==> equiv) option_measure.
+Proof. intros [] [] Heq; congruence. Qed.
+
+Lemma seq_bijection_upto_0_tree_sequence_measure_seq
+      {A : Type} (P : A -> bool) (t : tree A) (n : nat) :
+  wf_tree t ->
+  nondivergent'' n t ->
+  not_bound_in n t ->
+  (forall l : nat, free_in l t -> l = n) ->
+  option_measure ∘ tree_sequence t P n === measure_seq (unbiased_tree_to_itree' t) P.
+Proof.
+  intros Hwf Hnd Hnotbound Hfree.
+  transitivity (measure_seq' (unbiased_tree_to_itree' t) P).
+  2: { apply ext_eq_seq_bijection_upto_0.
+       intro i; rewrite measure_seq_measure_seq'; reflexivity. }
+  unfold measure_seq'.
+  apply compose_seq_bijection_upto_0; try reflexivity.
+  { apply Proper_option_measure. }
+  eapply itree_fintau_itree_lang_unique with (P0 := is_true ∘ P).
+  - eapply nondivergent''_itree_fintau; eauto.
+  - apply itree_lang_tree'; auto.
+  - apply itree_lang_topdown_lang.
+  - apply (@seq_nodup_tree_sequence A t [n] P); auto.
+    + inversion Hnd; auto.
+    + intros m Hbound [? | []]; subst.
+      apply bound_in_not_bound_in in Hnotbound; congruence.
+  - apply seq_nodup_topdown_lang.
+Qed.
 
 Lemma infer_supremum_measure {A : Type} (P : A -> bool) (t : tree A) (n : nat) :
   wf_tree t ->
   unbiased t ->
   (forall m, free_in m t -> m = n) ->
   not_bound_in n t ->
+  nondivergent'' n t ->
   supremum (infer (fun x : A => if P x then 1 else 0) t)
            (partial_sum (measure_seq (unbiased_tree_to_itree' t) P)).
 Proof.
-  intros Hwf Hunbiased Hfree Hnotbound.
-  apply seq_bijection_supremum with (s1:=option_measure ∘ tree_sequence t P n).
+  intros Hwf Hunbiased Hfree Hnotbound Hnd.
+  apply seq_bijection_upto_0_supremum with (s1:=option_measure ∘ tree_sequence t P n).
   - intro i; apply option_measure_nonnegative.
   - intro i; unfold measure_seq; destruct_LPO; try lra;
       apply interval_measure_nonnegative.
-  - apply seq_bijection_tree_sequence_measure_seq.
+  - apply seq_bijection_upto_0_tree_sequence_measure_seq; auto.
   - apply infer_supremum; auto.
+Qed.
+
+(* (* TODO: replace measure_seq with the analogue using tree_lang_meas *)
+(*    and see how far we can go in the sampling theorem using this and *)
+(*    preimage_tree_lang_meas_infer instead of the topdown lang stuff. *) *)
+(* Lemma infer_supremum_measure' {A : Type} (P : A -> bool) (t : tree A) (n : nat) : *)
+(*   wf_tree t -> *)
+(*   unbiased t -> *)
+(*   (forall m, free_in m t -> m = n) -> *)
+(*   not_bound_in n t -> *)
+(*   nondivergent'' n t -> *)
+(*   supremum (infer (fun x : A => if P x then 1 else 0) t) *)
+(*            (partial_sum (option_measure ∘ tree_sequence t P n)). *)
+(* Proof. *)
+(*   intros Hwf Hunbiased Hfree Hnotbound Hnd. *)
+(*   apply infer_supremum; auto. *)
+(* Qed. *)
+(*   apply seq_bijection_upto_0_supremum with (s1:=option_measure ∘ tree_sequence t P n). *)
+(*   - intro i; apply option_measure_nonnegative. *)
+(*   - intro i; unfold measure_seq; destruct_LPO; try lra; *)
+(*       apply interval_measure_nonnegative. *)
+(*   - apply seq_bijection_upto_0_tree_sequence_measure_seq; auto. *)
+(*   - apply infer_supremum; auto. *)
+(* Qed. *)
+
+Lemma preimage_tree_lang_meas_infer {A : Type} (t : tree A) (P : A -> bool) (n : nat) :
+  wf_tree t ->
+  unbiased t ->
+  (forall m, free_in m t -> m = n) ->
+  not_bound_in n t ->
+  nondivergent'' n t ->
+  measure (preimage_tree_lang_meas t P n)
+          (infer (fun x => if P x then 1 else 0) t).
+Proof.
+  intros Hwf Hunbiased Hfree Hnotbound Hnd.
+  unfold preimage_tree_lang_meas.
+  econstructor.
+  3: { eapply infer_supremum; eauto. }
+  unfold tree_lang_meas.
+  - intros i j Hneq.
+    destruct (tree_sequence t P n i) eqn:Hi, (tree_sequence t P n j) eqn:Hj;
+      constructor.
+    eapply seq_incomparable_tree_sequence; eauto.
+    + inversion Hnd; subst; eauto.
+    + intros m Hbound [Hin | []]; subst.
+      apply bound_in_not_bound_in in Hnotbound; congruence.
+  - unfold compose, option_measure.
+    intro i. unfold tree_lang_meas.
+    destruct (tree_sequence t P n i); constructor; reflexivity.
 Qed.
 
 Lemma preimage_meas_infer {A : Type} (t : tree A) (P : A -> bool) (n : nat) :
@@ -1184,13 +1045,14 @@ Lemma preimage_meas_infer {A : Type} (t : tree A) (P : A -> bool) (n : nat) :
   unbiased t ->
   (forall m, free_in m t -> m = n) ->
   not_bound_in n t ->
+  nondivergent'' n t ->
   measure (preimage_meas (unbiased_tree_to_itree' t) P)
           (infer (fun x => if P x then 1 else 0) t).
 Proof.
-  intros Hwf Hunbiased Hfree Hnotbound.
+  intros Hwf Hunbiased Hfree Hnotbound Hnd.
   apply measure_union with (g := measure_seq (unbiased_tree_to_itree' t) P).
   - intros i j Hneq; apply meas_seq_disjoint; auto.
-  - intro i; unfold meas_seq, measure_seq.
+  - intro i; unfold meas_seq, measure_seq, itree_topdown_lang.
     destruct_LPO; constructor; reflexivity.
   - eapply infer_supremum_measure; eauto.
 Qed.
@@ -1229,7 +1091,7 @@ Lemma sample_n_real_in_measb {A : Type}
 Proof.
   intro Hsample. split.
   - intros [n0 Hin].
-    unfold meas_seq in Hin.
+    unfold meas_seq, itree_topdown_lang in Hin.
     destruct_LPO.
     + destruct e as [n' H].
       unfold real_in_measb in Hin.
@@ -1248,7 +1110,7 @@ Proof.
       apply H0.
     + simpl in Hin; congruence.
   - intro HP.
-    unfold meas_seq.
+    unfold meas_seq, itree_topdown_lang.
     exists (bit_sequences_inverse (prefix r m)).
     destruct_LPO.
     + simpl.
@@ -1262,37 +1124,97 @@ Proof.
       eapply sample_n_singleton_P'; eauto.
 Qed.
 
+(* idea: use the top-down construction of the sequence using
+   sample_n and strong LPO as before, and show that it's a language of
+   the itree. Then, equivalence to the inductive construction follows
+   from uniqueness of the itree language (which only holds under
+   nondivergence). *)
+
+(* TODO: sampling fixpoint on inductive trees? using a map from labels to subtrees *)
+
+
+
+Lemma uniform_samples_nondivergent {A : Type} `{EqType A} (t : tree A) (lbl : nat)
+      (reals : nat -> real) (samples : nat -> A) :
+  uniform reals ->
+  (forall i, exists m n, sample_n (unbiased_tree_to_itree' t)
+                        (fun x => x = samples i) (prefix (reals i) m) n) ->
+  nondivergent'' lbl t.
+Proof.
+  intros Huniform Hsample.
+  unfold unbiased_tree_to_itree', tie_itree' in Hsample.
+  
+  assert (H0: forall i, exists n, sample (unbiased_tree_to_itree' t)
+                           (eq (samples i)) (prefix (reals i) n)).
+  { intros i; specialize (Hsample i).
+    destruct Hsample as [m [n Hsample]].
+    exists m; apply sample_sample_n; exists n.
+    eapply sample_n_singleton_P'; eauto. }
+  clear Hsample.
+  unfold nondivergent''.
+  destruct (nondivergent''_dec lbl t) as [? | Hdiv]; auto.
+  exfalso.
+  unfold divergent' in Hdiv.
+  
+  (* may need induction on Hdiv? *)
+  inversion Hdiv; subst.
+  destruct H3.
+  - destruct H1 as [H1 H2].
+    admit.
+  - 
+  
+Admitted.
+
 (** Sampling theorem. *)
-Section sample.
-  Variable A : Type.
-  Variable t : tree A.
-  Variable lbl : nat.
-  Hypothesis Hwf : wf_tree t.
-  Hypothesis Hunbiased : unbiased t.
-  Hypothesis Hfree : forall m, free_in m t -> m = lbl.
-  Hypothesis Hnotbound : not_bound_in lbl t.
+Section sampling_theorem.
+  Context (A : Type) `{EqType A} (t : tree A) (lbl : nat)
+          (reals : nat -> real) (samples : nat -> A) (P : A -> bool)
+          (Hwf : wf_tree t) (Hunbiased : unbiased t)
+          (Hfree : forall m, free_in m t -> m = lbl)
+          (Hnotbound : not_bound_in lbl t)
+          (Hnd : nondivergent'' lbl t).
 
   Definition it : itree unbiasedE A := unbiased_tree_to_itree' t.
 
-  Variable reals : nat -> real.
   Hypothesis reals_uniform : uniform reals.
-
-  Variable samples : nat -> A.
   Hypothesis reals_samples
     : forall i, exists m n, sample_n it (fun x => x = samples i) (prefix (reals i) m) n.
 
-  Variable P : A -> bool.
   Definition P_prob : Q := infer (fun x => if P x then 1 else 0) t.
+  
+  (* Context (A : Type) `{EqType A}. *)
+  (* Variable t : tree A. *)
+  (* Variable lbl : nat. *)
+  (* Hypothesis Hwf : wf_tree t. *)
+  (* Hypothesis Hunbiased : unbiased t. *)
+  (* Hypothesis Hfree : forall m, free_in m t -> m = lbl. *)
+  (* Hypothesis Hnotbound : not_bound_in lbl t. *)
+  (* Hypothesis Hnd : nondivergent'' lbl t. (* eliminate somehow? should *)
+  (*                                           be implied by reals_samples below. *) *)
 
-  Lemma samples_measure :
+  (* Definition it : itree unbiasedE A := unbiased_tree_to_itree' t. *)
+
+  (* Variable reals : nat -> real. *)
+  (* Hypothesis reals_uniform : uniform reals. *)
+  
+  (* Variable samples : nat -> A. *)
+  (* Hypothesis reals_samples *)
+    (* : forall i, exists m n, sample_n it (fun x => x = samples i) (prefix (reals i) m) n. *)
+
+  (* Variable P : A -> bool. *)
+  (* Definition P_prob : Q := infer (fun x => if P x then 1 else 0) t. *)
+
+  Theorem samples_converge :
     forall eps : Q,
       0 < eps ->
-      exists n : nat, Qabs (P_prob - rel_freq P (prefix samples n)) < eps.
+      exists n0 : nat, forall n, (n0 <= n)%nat -> Qabs (P_prob - rel_freq P (prefix samples n)) < eps.
   Proof.
     intros eps Heps.
-    specialize (reals_uniform (preimage_meas_infer P Hwf Hunbiased Hfree Hnotbound) Heps).
-    destruct reals_uniform as [n Habs].
-    exists n. unfold rel_freq' in Habs.
+    
+    specialize (reals_uniform (preimage_meas_infer P Hwf Hunbiased Hfree Hnotbound Hnd) Heps).
+    destruct reals_uniform as [n0 Habs].
+    exists n0. unfold rel_freq' in Habs.
+    intros n Hle.
     assert (Heq: rel_freq (real_in_measb (preimage_meas it P))
                           (prefix reals n) ==
                  rel_freq P (prefix samples n)).
@@ -1303,11 +1225,27 @@ Section sample.
         simpl; destruct_LPO.
         + apply reals_sample in e; auto.
         + destruct (P (samples i)); auto.
-          exfalso; apply n0; apply reals_sample; auto. }
+          exfalso; apply n1; apply reals_sample; auto. }
     rewrite <- Heq; auto.
+    
+    (* specialize (reals_uniform (preimage_tree_lang_meas_infer P Hwf Hunbiased Hfree Hnotbound Hnd) Heps). *)
+    (* destruct reals_uniform as [n Habs]. *)
+    (* exists n. unfold rel_freq' in Habs. *)
+    (* assert (Heq: rel_freq (real_in_measb (preimage_tree_lang_meas t P lbl)) *)
+    (*                       (prefix reals n) == *)
+    (*              rel_freq P (prefix samples n)). *)
+    (* { rewrite rel_freq_eq with (Q:=P) (g:=samples). *)
+    (*   - reflexivity. *)
+    (*   - intro i; destruct (reals_samples i) as [m [fuel reals_sample]]. *)
+    (*     apply sample_n_real_in_measb_tree with (P0:=P) (lbl0:=lbl) in reals_sample. *)
+    (*     simpl; destruct_LPO. *)
+    (*     + apply reals_sample in e; auto. *)
+    (*     + destruct (P (samples i)); auto. *)
+    (*       exfalso; apply n0; apply reals_sample; auto. } *)
+    (* rewrite <- Heq; auto. *)
+    
   Qed.
-End sample.
-
+End sampling_theorem.
 
 (** TODO: translating biased choice events into bernoulli trees with
   unbiased choice events. *)
@@ -1427,195 +1365,3 @@ primitive form.
   series argument in the fix case...
 
 *)
-
-Fixpoint infer_fail_n {A : Type} (n l : nat) (t : tree A) : Q :=
-  match n with
-  | O => 0
-  | S n' =>
-    match t with
-    | Leaf _ => 0
-    | Fail _ m => if m =? l then 1 else 0
-    | Choice p t1 t2 =>
-      p * infer_fail_n n' l t1 + (1-p) * infer_fail_n n' l t2
-    | Fix m t =>
-      let a := infer_fail_n n' l t in
-      let b := infer_fail_n n' m t in
-      a / (1 - b)
-    end
-  end.
-
-(* Fixpoint infer_f_n {A : Type} (n : nat) (f : A -> Q) (t : tree A) : Q := *)
-(*   match n with *)
-(*   | O => 0 *)
-(*   | S n' => *)
-(*     match t with *)
-(*     | Leaf x => f x *)
-(*     | Fail _ _ => 0 *)
-(*     | Choice p t1 t2 => p * infer_f_n n' f t1 + (1-p) * infer_f_n n' f t2 *)
-(*     | Fix m t => *)
-(*       let a := infer_f_n n' f t in *)
-(*       let b := infer_fail_n n' m t in *)
-(*       a / (1 - b) *)
-(*     end *)
-(*   end. *)
-
-Inductive px_tree (A : Type) :=
-| px_leaf : A -> px_tree A
-| px_choice : Q -> px_tree A -> px_tree A -> px_tree A
-| px_end : px_tree A.
-
-Inductive simple {A : Type} : tree A -> Prop :=
-| simple_leaf : forall x, simple (Leaf x)
-| simple_choice : forall p t1 t2,
-    simple t1 -> simple t2 ->
-    simple (Choice p t1 t2)
-| simple_fail : simple (Fail _ O).
-
-(** Finite prefix of an itree. *)
-Fixpoint prefix {A : Type} (t : itree biasedE A) (n : nat) : tree A :=
-  match n with
-  | O => Fail _ O
-  | S n' =>
-    match _observe t with
-    | RetF x => Leaf x
-    | TauF t' => prefix t' n'
-    | VisF (GetBiased p) k =>
-      Choice p (prefix (k false) n') (prefix (k true) n')
-    end
-  end.
-
-(** Finite prefix of an itree. *)
-Fixpoint prefix' {A : Type} (t : itree unbiasedE A) (n : nat) : tree A :=
-  match n with
-  | O => Fail _ O
-  | S n' =>
-    match observe t with
-    | RetF x => Leaf x
-    | TauF t' => prefix' t' n'
-    | VisF GetUnbiased k =>
-      Choice (1#2) (prefix' (k false) n') (prefix' (k true) n')
-    end
-  end.
-
-Lemma prefix_simple {A : Type} (t : itree biasedE A) (n : nat) :
-  simple (prefix t n).
-Proof.
-  revert t; induction n; intro t; simpl.
-  - constructor.
-  - destruct (_observe t); try destruct e; try constructor; auto.
-Qed.
-
-(** TODO: define inference on prefix trees and prove everything about
-  them? Then use a chain of prefixes.. Not sure how much this buys us,
-  but at least it should be easier to prove that inference is monotone
-  wrt the prefix ordering. *)
-
-(* Fixpoint infer_f_px {A : Type} (f : A -> Q) (t : px_tree A) : Q := *)
-(*   match t with *)
-(*   | px_leaf x => f x *)
-(*   | px_choice p t1 t2 => *)
-(*     p * infer_f_px f t1 + (1-p) * infer_f_px f t2 *)
-(*   | px_end _ => 0 *)
-(*   end. *)
-
-Fixpoint infer_f_n {A : Type} (f : A -> Q) (t : itree biasedE A) (n : nat) : Q :=
-  match n with
-  | O => 0
-  | S n' =>
-    match _observe t with
-    | RetF x => f x
-    | TauF t' => infer_f_n f t' n'
-    | VisF (GetBiased p) k =>
-      p * infer_f_n f (k true) n' + (1-p) * infer_f_n f (k false) n'
-    end
-  end.
-
-Fixpoint infer_f_n' {A : Type}
-         (f : A -> Q) (t : itree unbiasedE A) (n : nat) : Q :=
-  match n with
-  | O => 0
-  | S n' =>
-    match _observe t with
-    | RetF x => f x
-    | TauF t' => infer_f_n' f t' n'
-    | VisF GetUnbiased k =>
-      (1#2) * infer_f_n' f (k true) n' + (1#2) * infer_f_n' f (k false) n'
-    end
-  end.
-
-CoInductive wf_itree {A : Type} : itree biasedE A -> Prop :=
-| wf_itree_ret : forall x, wf_itree (Ret x)
-| wf_itree_tau : forall t, wf_itree t -> wf_itree (Tau t)
-| wf_itree_vis : forall p k,
-    0 <= p <= 1 ->
-    wf_itree (k false) ->
-    wf_itree (k true) ->
-    wf_itree (Vis (GetBiased p) k).
-
-Lemma ldfg {A : Type} {E : Type -> Type} (t : itree E A) :
-  t ≅ go (observe t).
-Proof.
-  (* Set Printing All. *)
-  apply itree_eta.
-Qed.
-
-Lemma kfsdf {A : Type} {E : Type -> Type} (t t' : itree E A) :
-  _observe t = TauF t' ->
-  t ≅ Tau t'.
-Proof.
-  intro Heq.
-  rewrite <- Heq.
-  apply itree_eta.
-Qed.
-
-(* Require Import Paco.paco. *)
-
-(* Instance Proper_wf_itree {A : Type} *)
-(*   : Proper (eq_itree eq ==> iff) (@wf_itree A). *)
-(* Proof. *)
-(*   intros t1 t2 Heq. split; intro Hwf. *)
-(*   -      *)
-
-(* Lemma gdg {A : Type} (f : A -> Q) (t : itree biasedE A) (n : nat) : *)
-(*   expectation f -> *)
-(*   wf_itree t -> *)
-(*   infer_f_n f t n <= infer_f_n f t (S n). *)
-(* Proof. *)
-(*   intro Hexp. *)
-(*   revert t. *)
-(*   induction n; intros t Hwf; simpl. *)
-(*   - destruct (_observe t); try destruct e; auto; lra. *)
-(*   - destruct (_observe t) eqn:Ht. *)
-(*     + lra. *)
-(*     + apply IHn. *)
-(*       rewrite kfsdf. *)
-      
-(*     + destruct e. *)
-(*       pose proof (IHn (k true)) as IHtrue. *)
-(*       pose proof (IHn (k false)) as IHfalse. *)
-(*       simpl in *. *)
-(*       assert (0 <= q <= 1). admit. *)
-(*       nra. *)
-(* Admitted. *)
-
-(* Instance monotone_infer_f_n {A : Type} (f : A -> Q) (t : itree biasedE A) *)
-(*   : Proper (le ==> Qle) (infer_f_n f t). *)
-(* Proof. *)
-(*   intros n m Hle. simpl. *)
-
-(* Fixpoint infer_f_lib_n {A : Type} (n : nat) (f : A -> Q) (t : itree biasedE A) : Q := *)
-(*   match n with *)
-(*   | O => 1 *)
-(*   | S n' => *)
-(*     match t with *)
-(*     | Ret x => f x *)
-(*     | Tau t' => infer_f_lib_n n' f t' *)
-(*     | Vis (GetBiased p) k => *)
-(*       p * (infer_f_lib_n n' f (k true)) + (1-p) * (infer_f_lib_n n' f (k false)) *)
-(*     end *)
-(*   end. *)
-
-(* Definition infer_n {A : Type} (n : nat) (f : A -> Q) (t : itree biasedE A) : Q := *)
-(*   let a := infer_f_n n f t in *)
-(*   let b := infer_f_lib_n n (const 1) t in *)
-(*   a / b. *)

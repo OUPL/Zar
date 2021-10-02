@@ -24,9 +24,10 @@ Require Import Q.
 Require Import tree.
 
 (** This file defines the function "translate_bernoulli" which
-compiles arbitrary trees to equivalent trees containing only unbiased
-choices. The two main theorems, [translate_bernoulli_infer_f] and
-[unbiased_translate_bernoulli], are at the bottom of the file. *)
+    compiles arbitrary trees to equivalent trees containing only
+    unbiased choices. The two main theorems,
+    [translate_bernoulli_infer_f] and [unbiased_translate_bernoulli],
+    are at the bottom of the file. *)
 
 Fixpoint add_to_tree {A : Type} `{EqType A} (x : A) (t : tree A) : tree A :=
   match t with
@@ -494,7 +495,7 @@ Proof. intros H0 H1; apply in_list_tree_aux' in H1; firstorder. Qed.
 
 (** PLAN: use an alternative construction of the bernoulli tree that
   first builds the tree from a list containing a section of the
-  natural numbers (so therapply e are no duplicates) and then maps a
+  natural numbers (so there are no duplicates) and then maps a
   predicate over that tree to obtain the final result. We can easily
   prove length <= terminals for the section tree and then show that
   terminals is preserved by fmap. *)
@@ -738,32 +739,32 @@ Proof.
   - inversion Hnf.
 Qed.
 
-Lemma no_fix_in_tree_infer_fail_lt_1 {A : Type} (lbl : nat) (x : A) (t : tree A) :
-  wf_tree t ->
-  no_fix t ->
-  in_tree x t ->
-  not_bound_in lbl t ->
-  unbiased t ->
-  infer_fail lbl t < 1.
-Proof.
-  induction t; simpl; intros Hwf Hnf Hin Hnotbound Hub.
-  - lra.
-  - inversion Hin.
-  - inversion Hnf; subst.
-    inversion Hwf; subst.
-    inversion Hnotbound; subst.
-    inversion Hub; subst.
-    inversion Hin; subst.
-    + specialize (IHt1 H5 H1 H2 H7 H10).
-      assert (infer_fail lbl t2 <= 1).
-      { apply infer_fail_le_1; auto. }
-      rewrite H8; lra.
-    + specialize (IHt2 H6 H3 H2 H9 H11).
-      assert (infer_fail lbl t1 <= 1).
-      { apply infer_fail_le_1; auto. }
-      rewrite H8; lra.
-  - inversion Hnf.
-Qed.
+(* Lemma no_fix_in_tree_infer_fail_lt_1 {A : Type} (lbl : nat) (x : A) (t : tree A) : *)
+(*   wf_tree t -> *)
+(*   no_fix t -> *)
+(*   in_tree x t -> *)
+(*   not_bound_in lbl t -> *)
+(*   unbiased t -> *)
+(*   infer_fail lbl t < 1. *)
+(* Proof. *)
+(*   induction t; simpl; intros Hwf Hnf Hin Hnotbound Hub. *)
+(*   - lra. *)
+(*   - inversion Hin. *)
+(*   - inversion Hnf; subst. *)
+(*     inversion Hwf; subst. *)
+(*     inversion Hnotbound; subst. *)
+(*     inversion Hub; subst. *)
+(*     inversion Hin; subst. *)
+(*     + specialize (IHt1 H5 H1 H2 H7 H10). *)
+(*       assert (infer_fail lbl t2 <= 1). *)
+(*       { apply infer_fail_le_1; auto. } *)
+(*       rewrite H8; lra. *)
+(*     + specialize (IHt2 H6 H3 H2 H9 H11). *)
+(*       assert (infer_fail lbl t1 <= 1). *)
+(*       { apply infer_fail_le_1; auto. } *)
+(*       rewrite H8; lra. *)
+(*   - inversion Hnf. *)
+(* Qed. *)
 
 Lemma infer_f_infer_fail_ge_1 {A : Type} (lbl : nat) (f : A -> Q) (t : tree A) :
   no_fix t ->
@@ -798,7 +799,7 @@ Proof.
   inversion Hwf; subst.
   inversion Hub; subst.
   assert (infer_fail lbl t0 < 1).
-  { eapply no_fix_in_tree_infer_fail_lt_1; eauto. }
+  { eapply nd_infer_fail_lt_1; eauto. }
   cut (1 <= infer_f f t0 + infer_fail lbl t0).
   { intro Hle'. apply Qle_shift_div_l; lra. }
   apply infer_f_infer_fail_ge_1; auto.
@@ -834,6 +835,21 @@ Proof.
   intro x; destruct (f x); reflexivity.
 Qed.
 
+(* Lemma nd_infer_f_lib_sum_1 {A : Type} (f : A -> bool) (t : tree A) : *)
+(*   nd t -> *)
+(*   unbiased t -> *)
+(*   wf_tree t -> *)
+(*   infer_f_lib (fun x => if f x then 0 else 1) t + *)
+(*   infer_f_lib (fun x => if f x then 1 else 0) t - *)
+(*   infer_f_lib (const 0) t == 1. *)
+(* Proof. *)
+(*   intros Hnd Hub Hwf. *)
+(*   rewrite <- infer_f_lib_linear. *)
+(*   rewrite <- nd_infer_f_lib_preserves_1 with (t0:=t); auto. *)
+(*   eapply Proper_infer_f; auto. *)
+(*   intro x; destruct (f x); reflexivity. *)
+(* Qed. *)
+
 Lemma nd_infer_f_complement {A : Type} (f : A -> bool) (t : tree A) :
   nd t ->
   unbiased t ->
@@ -845,8 +861,57 @@ Proof.
   generalize (nd_infer_f_sum_1 f t Hnd Hub Hwf); intro Hsum; lra.
 Qed.
 
-Definition Qnum_nat (p : Q) : nat := Z.to_nat (Qnum p).
-Definition Qden_nat (p : Q) : nat := Pos.to_nat (Qden p).
+Lemma no_fix_infer_f_infer_f_lib {A : Type} (f : A -> Q) (t : tree A) :
+  no_fix t ->
+  infer_f f t == infer_f_lib f t.
+Proof.
+  induction 1; subst; simpl; try reflexivity.
+  rewrite IHno_fix1, IHno_fix2; reflexivity.
+Qed.
+
+Lemma nd_infer_f_infer_f_lib {A : Type} (f : A -> Q) (t : tree A) :
+  wf_tree t ->
+  unbiased t ->
+  nd t ->
+  infer_f f t == infer_f_lib f t.
+Proof.
+  intros Hwf Hub.
+  inversion 1; subst; simpl.
+  inversion Hwf; inversion Hub; subst.
+  assert (infer_fail lbl t0 < 1).
+  { eapply nd_infer_fail_lt_1; eauto. }
+  destruct (Qeq_bool (infer_fail lbl t0) 1) eqn:Hfail.
+  { apply Qeq_bool_eq in Hfail; lra. }
+  rewrite no_fix_infer_f_infer_f_lib; auto.
+  reflexivity.
+Qed.
+
+Lemma nd_infer_f_lib_complement {A : Type} (f : A -> bool) (t : tree A) :
+  nd t ->
+  unbiased t ->
+  wf_tree t ->
+  infer_f_lib (fun x => if f x then 0 else 1) t ==
+  1 - infer_f_lib (fun x => if f x then 1 else 0) t.
+Proof.
+  intros Hnd Hub Hwf.
+  rewrite <- 2!nd_infer_f_infer_f_lib; auto.
+  apply nd_infer_f_complement; auto.
+Qed.
+
+(* Lemma nd_infer_f_lib_complement {A : Type} (f : A -> bool) (t : tree A) : *)
+(*   nd t -> *)
+(*   unbiased t -> *)
+(*   wf_tree t -> *)
+(*   infer_f_lib (fun x => if f x then 0 else 1) t == *)
+(*   1 - infer_f_lib (fun x => if f x then 1 else 0) t + infer_f_lib (const 0) t. *)
+(* Proof. *)
+(*   intros Hnd Hub Hwf. *)
+(*   rewrite <- 3!nd_infer_f_infer_f_lib; auto. *)
+(*   generalize (nd_infer_f_sum_1 f t Hnd Hub Hwf); intro Hsum; lra. *)
+(* Qed. *)
+
+(* Definition Qnum_nat (p : Q) : nat := Z.to_nat (Qnum p). *)
+(* Definition Qden_nat (p : Q) : nat := Pos.to_nat (Qden p). *)
 
 Fixpoint translate_bernoulli_aux {A : Type} (t : tree A) : state nat (tree A) :=
   match t with
@@ -860,24 +925,6 @@ Fixpoint translate_bernoulli_aux {A : Type} (t : tree A) : state nat (tree A) :=
               (fun b => if b : bool then t1' else t2'))
   | Fix m t1 => t1' <- translate_bernoulli_aux t1 ;; ret (Fix m t1')
   end.
-
-(* Fixpoint translate_bernoulli_aux {A : Type} (t : tree A) : state nat (tree A) := *)
-(*   match t with *)
-(*   | Leaf x => ret (Leaf x) *)
-(*   | Fail _ m => ret (Fail _ m) *)
-(*   | Choice p t1 t2 => *)
-(*     bind (translate_bernoulli_aux t1) *)
-(*          (fun t1' => *)
-(*             bind (translate_bernoulli_aux t2) *)
-(*                  (fun t2' => *)
-(*                     bind freshLabel *)
-(*                          (fun lbl => *)
-(*                             ret (bind (bernoulli_tree lbl *)
-(*                                                       (Z.to_nat (Qnum p)) *)
-(*                                                       (Pos.to_nat (Qden p))) *)
-(*                                       (fun b => if b : bool then t1' else t2'))))) *)
-(*   | Fix m t1 => bind (translate_bernoulli_aux t1) (fun t1' => ret (Fix m t1')) *)
-(*   end. *)
 
 Definition translate_bernoulli {A : Type} (t : tree A) : tree A :=
   evalState (translate_bernoulli_aux t) (list_max (all_labels t)).
@@ -910,6 +957,26 @@ Lemma unfold_translate_bernoulli_aux {A : Type}
                           (Z.to_nat (Qnum q))
                           (Pos.to_nat (Qden q)))
                        (fun b : bool => if b then t1' else t2')).
+Proof.
+  simpl. unfold evalState. simpl.
+  intros Ht1 Ht2.
+  destruct (runState (translate_bernoulli_aux t1) n) eqn:Ht1'.
+  inversion Ht1; subst.
+  destruct (runState (translate_bernoulli_aux t2) m) eqn:Ht2'.
+  inversion Ht2; subst.
+  reflexivity.
+Qed.
+
+Lemma unfold_translate_bernoulli_aux_lib {A : Type}
+      f q (t1 t2 t1' t2' : tree A) n m o :
+  runState (translate_bernoulli_aux t1) n = (t1', m) ->
+  runState (translate_bernoulli_aux t2) m = (t2', o) ->
+  infer_f_lib f (evalState (translate_bernoulli_aux (Choice q t1 t2)) n) ==
+  infer_f_lib f (tree_bind (bernoulli_tree
+                              (S o)
+                              (Z.to_nat (Qnum q))
+                              (Pos.to_nat (Qden q)))
+                           (fun b : bool => if b then t1' else t2')).
 Proof.
   simpl. unfold evalState. simpl.
   intros Ht1 Ht2.
@@ -1393,6 +1460,142 @@ Proof.
       inversion Hnotin; subst; auto.
 Qed.
 
+(* Lemma infer_f_lib_bind_choice' {A : Type} (f : A -> Q) (t : tree bool) (t1 t2 : tree A) : *)
+(*   nd t -> *)
+(*   (forall (n : nat) (x : bool), bound_in n t -> not_in n (if x then t1 else t2)) -> *)
+(*   infer_f_lib f (bind t (fun b => if b : bool then t1 else t2)) == *)
+(*   infer_f_lib (fun b => if b : bool then 1 else 0) t * infer_f_lib f t1 + *)
+(*   infer_f_lib (fun b => if b : bool then 0 else 1) t * infer_f_lib f t2. *)
+(* Proof. *)
+(*   intros Hnd Hnotin. *)
+(*   rewrite <- infer_f_lib_bind; auto. *)
+(*   unfold compose; induction t; simpl; inverson *)
+(*   - destruct a; lra. *)
+(*   - lra. *)
+(*   - rewrite IHt1, IHt2; try lra; *)
+(*       intros; apply Hnotin; solve [constructor; auto]. *)
+(*   - rewrite IHt. *)
+(*     + destruct (Qeq_dec (infer_fail n t) 1). *)
+(*       * rewrite q, Qminus_cancel, 3!Qdiv_0_den; lra. *)
+(*       * field; lra. *)
+(*     + intros; apply Hnotin. *)
+(*       destruct (Nat.eqb_spec n0 n); subst; constructor; auto. *)
+(* Qed. *)
+
+Lemma wf_bernoulli_tree lbl n d :
+  wf_tree (bernoulli_tree lbl n d).
+Proof.
+  constructor.
+  - apply wf_list_tree_aux; constructor.
+  - apply not_bound_in_list_tree_aux; constructor.
+Qed.
+
+Lemma unbiased_bernoulli_tree lbl n d :
+  unbiased (bernoulli_tree lbl n d).
+Proof. constructor; apply unbiased_bernoulli_tree_open. Qed.
+
+Lemma bernoulli_tree_spec_lib (lbl : nat) (p : Q) :
+  0 <= p -> p <= 1 ->
+  infer_f_lib (fun b => if b : bool then 1 else 0)
+              (bernoulli_tree lbl (Z.to_nat (Qnum p)) (Pos.to_nat (Qden p))) ==
+  p.
+Proof.
+  intros H0 H1.
+  rewrite <- nd_infer_f_infer_f_lib.
+  { rewrite bernoulli_tree_spec'; auto; reflexivity. }
+  - eapply wf_bernoulli_tree.
+  - apply unbiased_bernoulli_tree.
+  - apply nd_bernoulli_tree; lia.
+Qed.
+
+Lemma infer_fail_bernoulli_tree_open (lbl n d : nat) :
+  (0 < d)%nat ->
+  (n <= d)%nat ->
+  infer_fail lbl (bernoulli_tree_open lbl n d) < 1.
+Proof.
+  intros H0 H1.
+  rewrite bernoulli_tree_open_infer_fail; auto.
+  generalize (terminals_nonzero (bernoulli_tree_open lbl n d)).
+  intro H.
+  apply Qmake_lt_1; lia.
+Qed.
+
+Lemma translate_bernoulli_aux_infer_f_lib {A : Type}
+      (f : A -> Q) (t : tree A) (n : nat) :
+  wf_tree t ->
+  (forall m, (n < m)%nat -> not_in m t) ->
+  infer_f_lib f t == infer_f_lib f (evalState (translate_bernoulli_aux t) n).
+Proof.
+  revert n.
+  induction t; intros n' Hwf Hnotin; try reflexivity.
+  - unfold evalState in IHt1, IHt2.
+    inversion Hwf; subst.
+    assert (Hnotin1: forall m, (n' < m)%nat -> not_in m t1).
+    { intros m Hlt; specialize (Hnotin m Hlt); inversion Hnotin; auto. }
+    specialize (IHt1 n' H3 Hnotin1).
+    destruct (runState (translate_bernoulli_aux t1) n') eqn:Ht1.
+    assert (Hnotin2: forall m, (n < m)%nat -> not_in m t2).
+    { intros m Hlt.
+      apply translate_bernoulli_aux_le in Ht1.
+      assert (Hlt': (n' < m)%nat).
+      { lia. }
+      specialize (Hnotin m Hlt'); inversion Hnotin; auto. }
+    specialize (IHt2 n H4 Hnotin2).
+    destruct (runState (translate_bernoulli_aux t2) n) eqn:Ht2.
+    rewrite unfold_translate_bernoulli_aux_lib; eauto.
+    rewrite infer_f_lib_bind_choice.
+    + rewrite nd_infer_f_lib_complement.
+      * rewrite bernoulli_tree_spec_lib; simpl in *; try lra.
+        assert (infer_fail (S n0) (bernoulli_tree_open (S n0) (Z.to_nat (Qnum q))
+                                                       (Pos.to_nat (Qden q))) < 1).
+        { eapply infer_fail_bernoulli_tree_open; try lia.
+          apply Q_num_le_den; lra. }
+        destruct (Qeq_bool (infer_fail (S n0) (bernoulli_tree_open (S n0) (Z.to_nat (Qnum q))
+                                                                   (Pos.to_nat (Qden q)))) 1)
+        eqn:Hfail.
+        { apply Qeq_bool_eq in Hfail; lra. }
+        rewrite <- (no_fix_infer_f_infer_f_lib (const 0)).
+        -- rewrite infer_f_const_0, Qdiv_0_num; nra.
+        -- apply no_fix_list_tree_aux; constructor.
+      * apply nd_bernoulli_tree; lia.
+      * constructor; apply unbiased_list_tree_aux; constructor.
+      * constructor.
+        -- apply wf_list_tree_aux; constructor.
+        -- apply not_bound_in_list_tree_aux; constructor.
+    + intros m x Hbound.
+      inversion Hwf; subst.
+      apply bound_in_bernoulli_tree in Hbound; subst.
+      specialize (Hnotin (S n') (Nat.lt_succ_diag_r n')).
+      inversion Hnotin; subst; destruct x; auto.
+      * eapply translate_bernoulli_aux_not_in.
+        2: { apply Ht1. }
+        -- intros o Hlt; apply Hnotin1.
+           apply translate_bernoulli_aux_le in Ht1; lia.
+        -- apply translate_bernoulli_aux_le in Ht2; lia.
+      * eapply translate_bernoulli_aux_not_in.
+        2: { apply Ht2. }
+        -- intros o Hlt; apply Hnotin2.
+           apply translate_bernoulli_aux_le in Ht2; lia.
+        -- lia.
+  - inversion Hwf; subst.
+    assert (Hle: (n <= n')%nat).
+    { destruct (le_lt_dec n n'); auto.
+      apply Hnotin in l. inversion l; subst; congruence. }
+    generalize (translate_bernoulli_aux_infer_fail t n n' H1 Hle).
+    intro Hfail.
+    unfold evalState in *. simpl in *.
+    specialize (IHt n').
+    destruct (runState (translate_bernoulli_aux t) n') eqn:Ht.
+    simpl in *.
+    assert (H: forall m : nat, (n' < m)%nat -> not_in m t).
+    { intros m Hlt.
+      specialize (Hnotin m Hlt); inversion Hnotin; auto. }
+    rewrite Hfail; auto.
+    + destruct (Qeq_bool (infer_fail n t0) 1) eqn:Ht0; try reflexivity.
+      rewrite Hfail; auto.
+      rewrite IHt; try reflexivity; auto.
+Qed.
+
 Lemma unbiased_translate_bernoulli_aux {A : Type} (t : tree A) (n : nat) :
   unbiased (evalState (translate_bernoulli_aux t) n).
 Proof.
@@ -1414,7 +1617,6 @@ Proof.
     constructor; auto.
 Qed.
 
-(** Soundness result: translation preserves inference semantics. *)
 Lemma translate_bernoulli_infer_f {A : Type} (f : A -> Q) (t : tree A) :
   wf_tree t ->
   infer_f f t == infer_f f (translate_bernoulli t).
@@ -1424,8 +1626,28 @@ Proof.
   apply list_max_lt_not_in.
 Qed.
 
+Lemma translate_bernoulli_infer_f_lib {A : Type} (f : A -> Q) (t : tree A) :
+  wf_tree t ->
+  infer_f_lib f t == infer_f_lib f (translate_bernoulli t).
+Proof.
+  intro Hwf.
+  apply translate_bernoulli_aux_infer_f_lib; auto.
+  apply list_max_lt_not_in.
+Qed.
+
+(** Soundness result: translation preserves inference semantics. *)
+Theorem translate_bernoulli_infer {A : Type} (f : A -> Q) (t : tree A) :
+  wf_tree t ->
+  infer f t == infer f (translate_bernoulli t).
+Proof.
+  intro Hwf.
+  unfold infer.
+  rewrite translate_bernoulli_infer_f, translate_bernoulli_infer_f_lib; auto.
+  reflexivity.
+Qed.
+
 (** Correctness result: translation produces unbiased trees. *)
-Lemma unbiased_translate_bernoulli {A : Type} (t : tree A) :
+Theorem unbiased_translate_bernoulli {A : Type} (t : tree A) :
   unbiased (translate_bernoulli t).
 Proof.
   unfold translate_bernoulli.

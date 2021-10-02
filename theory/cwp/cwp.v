@@ -17,6 +17,7 @@ Require Import order.
 Require Import Q.
 Open Scope cpGCL_scope.
 Open Scope Q_scope.
+Open Scope order_scope.
 
 (** Note on the relational versions of wp and wlp: we make them
   explicitly "proper" wrt extensional equivalence of arguments. This
@@ -59,7 +60,7 @@ Inductive wp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
     wp (CObserve e) f f'.
 
 (** Relational specification of weakest liberal pre-expectation
-    semantics *)
+    semantics. *)
 Inductive wlp : cpGCL -> (St -> Q) -> (St -> Q) -> Prop :=
 | wlp_skip : forall f g, f ==f g -> wlp CSkip f g
 | wlp_abort : forall f g, g ==f const 1 -> wlp CAbort f g
@@ -210,7 +211,7 @@ Inductive iid_cpGCL : cpGCL -> Prop :=
 
 
 (** A couple tactics that are useful for reasoning about example
-  programs using wp and wlp. *)
+    programs with wp and wlp. *)
 
 Ltac rewrite_equiv :=
   match goal with
@@ -232,7 +233,7 @@ Ltac wlp_inversion :=
 
 
 (** wp is proper wrt extensional equivalence of its function
-  arguments. *)
+    arguments. *)
 Instance Proper_wp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) wp.
 Proof.
   unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst; split; intro Hwp.
@@ -293,7 +294,7 @@ Proof.
 Qed.
 
 (** wlp is proper wrt extensional equivalence of its function
-  arguments. *)
+    arguments. *)
 Instance Proper_wlp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) wlp.
 Proof.
   unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst; split; intro Hwlp.
@@ -354,7 +355,7 @@ Proof.
 Qed.
 
 (** cwp is proper wrt extensional equivalence of its function
-  arguments. *)
+    arguments. *)
 Instance Proper_cwp : Proper (eq ==> f_Qeq ==> f_Qeq ==> iff) cwp.
 Proof.
   unfold f_Qeq; intros ? c ? f g Heq f' g' Heq'; subst.
@@ -375,7 +376,7 @@ Proof.
 Qed.
 
 (** wpf is proper wrt extensional equivalence of its function
-  arguments. *)
+    arguments. *)
 Instance Proper_wpf : Proper (eq ==> f_Qeq ==> f_Qeq) wpf.
 Proof.
   intros c1 c2 Heq; subst.
@@ -398,7 +399,7 @@ Proof.
 Qed.
 
 (** wlpf is proper wrt extensional equivalence of its function
-  arguments. *)
+    arguments. *)
 Instance Proper_wlpf : Proper (eq ==> f_Qeq ==> f_Qeq) wlpf.
 Proof.
   intros c1 c2 Heq; subst.
@@ -569,3 +570,108 @@ Proof.
   { intros; rewrite H; reflexivity. }
   eapply wlp_deterministic; eauto.
 Qed.
+
+(* Lemma wp_expectation (c : cpGCL) (f f' : St -> Q) : *)
+(*   wf_cpGCL c -> *)
+(*   expectation f -> *)
+(*   wp c f f' -> *)
+(*   expectation f'. *)
+(* Proof. *)
+(* Admitted. *)
+
+(* (** The relational version of wp is monotone (the corresponding proof *)
+(*     for wpf is in cwp_cwpf.v. *) *)
+(* Lemma wp_monotone (c : cpGCL) : *)
+(*   wf_cpGCL c -> *)
+(*   forall f f' g g' : St -> Q, *)
+(*     expectation f -> expectation g -> *)
+(*     wp c f f' -> wp c g g' -> *)
+(*     leq f g -> leq f' g'. *)
+(* Proof. *)
+(*   induction c; simpl; intros Hwf f f' g g' Hf Hg Hwpf Hwpg Hleq; *)
+(*     inversion Hwpf; inversion Hwpg; subst; intro x. *)
+(*   - rewrite <- H, <- H0; auto. *)
+(*   - rewrite H, H0; lra. *)
+(*   - rewrite H3, H8; apply Hleq. *)
+(*   - inversion Hwf; subst; rewrite H5, H12. *)
+(*     eapply IHc1 with (f:=g0) (g:=g1); eauto. *)
+(*     + eapply wp_expectation with (f:=f); eauto. *)
+(*     + eapply wp_expectation with (f:=g); eauto. *)
+(*   - inversion Hwf; subst; rewrite H6, H14; destruct (e x). *)
+(*     + eapply IHc1 with (f:=f); eauto. *)
+(*     + eapply IHc2 with (f:=f); eauto. *)
+(*   - inversion Hwf; subst; rewrite H6, H14. *)
+(*     cut (g0 x <= g1 x). *)
+(*     { intro Hle; cut (h x <= h0 x). *)
+(*       { nra. } *)
+(*       eapply IHc2 with (f:=f); eauto. } *)
+(*     eapply IHc1 with (f:=f); eauto. *)
+(*   - admit. *)
+(*   - rewrite H0, H4; destruct (e x); auto; lra. *)
+(* Admitted. *)
+
+Lemma unroll_le (e : exp) (c : cpGCL) (i : nat) :
+  unroll e c i ⊑ unroll e c (S i).
+Proof.
+  induction i.
+  - repeat constructor.
+  - constructor; constructor; apply IHi.
+Qed.
+
+(* (** wp is ω-continuous. *) *)
+(* Lemma wp_continuous (c : cpGCL) : *)
+(*   wf_cpGCL c -> *)
+(*   forall ch ch' : nat -> St -> Q, forall sup sup' : St -> Q, *)
+(*       chain ch -> *)
+(*       (forall i, expectation (ch i)) -> *)
+(*       supremum sup ch -> *)
+(*       wp c sup sup' -> *)
+(*       (forall i, wp c (ch i) (ch' i)) -> *)
+(*       supremum sup' ch'. *)
+(* Proof. *)
+(*   induction c; intros Hwf ch ch' sup sup' Hchain Hexp Hsup Hwpsup Hwpchain. *)
+(*   - inversion Hwpsup; subst. *)
+(*     rewrite f_Qeq_equ in H. rewrite <- H. *)
+(*     assert (H0: equ ch ch'). *)
+(*     { split; intro i; specialize (Hwpchain i); inversion Hwpchain; subst; *)
+(*         apply f_Qeq_equ in H0; apply H0. } *)
+(*     rewrite <- H0; auto. *)
+(*   - inversion Hwpsup; subst. *)
+(*     rewrite f_Qeq_equ in H. rewrite H. *)
+(*     assert (H0: equ ch' (const (const 0))). *)
+(*     { split; intro i; specialize (Hwpchain i); inversion Hwpchain; subst; *)
+(*         apply f_Qeq_equ in H0; apply H0. } *)
+(*     rewrite H0. *)
+(*     apply const_supremum; intro i; apply f_Qeq_equ; intro j; reflexivity. *)
+(*   - inversion Hwpsup; subst. *)
+(*     apply f_Qeq_equ in H3; rewrite H3; clear H3. *)
+(*     split. *)
+(*     + intros i x. specialize (Hwpchain i). *)
+(*       inversion Hwpchain; subst. *)
+(*       rewrite H3. apply Hsup. *)
+(*     + intros ub Hub. *)
+(*     admit. *)
+(*   - inversion Hwpsup; subst. *)
+(*     apply f_Qeq_equ in H5. *)
+(*     rewrite H5. *)
+(*     inversion Hwf; subst. *)
+(*     assert (Htemp: forall i, exists f, wp c1 f (ch' i) /\ wp c2 (ch i) f). *)
+(*     { intro i. specialize (Hwpchain i). inversion Hwpchain; subst. *)
+(*       exists g0; auto; split; eapply Proper_wp; eauto; reflexivity. } *)
+(*     (* Need choice function to turn Htemp into Hch'' *) *)
+(*     assert (Hch'': exists ch'', (forall i, wp c1 (ch'' i) (ch' i) /\ wp c2 (ch i) (ch'' i))). *)
+(*     { admit. } *)
+(*     destruct Hch'' as [ch'' Hch'']. *)
+(*     eapply IHc2 with (ch' := ch'') in H1; eauto. *)
+(*     2: { apply Hch''. } *)
+(*     eapply IHc1 with (ch := ch'') (ch' := ch') in H2; eauto. *)
+(*     + intro i; eapply wp_monotone; eauto; apply Hch''. *)
+(*     + intro i; eapply wp_expectation; eauto; apply Hch''. *)
+(*     + apply Hch''. *)
+(*   - admit. *)
+(*   - admit. *)
+(*   - admit. *)
+(*   - inversion Hwpsup; subst. *)
+(*     apply f_Qeq_equ in H0; rewrite H0; clear H0. *)
+(*     admit. *)
+(* Admitted. *)

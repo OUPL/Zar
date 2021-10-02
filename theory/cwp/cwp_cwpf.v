@@ -350,8 +350,8 @@ Lemma wf_unroll c e i :
   wf_cpGCL (unroll e c i).
 Proof. induction i; repeat constructor; auto. Qed.
 
-(** wpf is monotone. That is, [∀ f g, f <= g -> wpf c f <= wpf c g]
-  for any command c. *)
+(** wpf is monotone. That is, [∀ f g, f <= g -> wpf c f <= wpf c g] for
+    any command c. *)
 Lemma wpf_monotone c :
   wf_cpGCL c ->
   monotone (wpf c).
@@ -418,8 +418,29 @@ Proof.
   - destruct (e x); auto; lra.
 Qed.
 
+(* Lemma wpf_continuous (c : cpGCL) : *)
+(*   wf_cpGCL c -> *)
+(*   forall ch : nat -> St -> Q, forall sup : St -> Q, *)
+(*       chain ch -> *)
+(*       (forall i, expectation (ch i)) -> *)
+(*       supremum sup ch -> *)
+(*       supremum (wpf c sup) (wpf c ∘ ch). *)
+(* Proof. *)
+(*   induction c; intros Hwf ch sup Hchain Hexp Hsup; simpl; unfold compose; auto. *)
+(*   - apply const_supremum; reflexivity. *)
+(*   - split. *)
+(*     + intros i x; apply Hsup. *)
+(*     + intros ub Hub x. *)
+(*       destruct Hsup. simpl in *. *)
+(*       specialize (H0 ub). *)
+(*       unfold upper_bound in Hub. simpl in *. *)
+(*       destruct Hsup. simpl in *. *)
+(*       specialize (H0 ub). *)
+(*       eapply Qle_trans; eauto. *)
+(*       apply Hsup. *)
+
 (** A corollary of [wlpf_disjoint_le_1] that isn't being used at the
-  moment. *)
+    moment. *)
 (* Lemma wpf_indicator_1_0 c (e : exp) st : *)
 (*   wf_cpGCL c -> *)
 (*   wpf c (fun x => if e x then 1 else 0) st == 1 -> *)

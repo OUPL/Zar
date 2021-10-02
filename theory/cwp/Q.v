@@ -13,7 +13,6 @@ Local Open Scope program_scope.
 
 Require Import misc.
 
-
 (** Definitions *)
 
 Definition sum_Q_list (l : list Q) : Q :=
@@ -28,16 +27,11 @@ Fixpoint Qpow (x : Q) (n : nat) :=
   | S n' => x * Qpow x n'
   end.
 
-(* Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x. *)
-(* Notation "f '==f' g" := (f_Qeq f g) (at level 80, no associativity) : Q_scope. *)
-(* Local Open Scope Q_scope. *)
-
 Definition f_Qeq {A : Type} (f g : A -> Q) := forall x, f x == g x.
 Notation "f '==f' g" := (forall x, f x == g x) (at level 80, no associativity) : Q_scope.
 Local Open Scope Q_scope.
 
 Definition partial_sum (f : nat -> Q) (n : nat) : Q :=
-  (* sum_Q_list (first_n f (S n)). *)
   sum_Q_list (first_n f n).
 
 Definition max_Q (x y : Q) : Q :=
@@ -602,3 +596,108 @@ Lemma ratio_Qeq_sum a b c :
   ~ b == 1 ->
   a + b * c == c -> a / (1 - b) == c.
 Proof. intros Hb H0; symmetry; apply Qmult_Qdiv_r; lra. Qed.
+
+Lemma Qred_idempotent (q : Q) :
+  Qred (Qred q) = Qred q.
+Proof. apply Qred_complete, Qred_correct. Qed.
+
+Lemma sum_Q_list_map_Qred (l : list Q) :
+  sum_Q_list (map Qred l) == sum_Q_list l.
+Proof.
+  induction l; simpl; try lra.
+  rewrite IHl, Qred_correct; lra.
+Qed.
+
+Lemma Qdiv_num_inversion (a b c : Q) :
+  ~ c == 0 -> a / c == b / c -> a == b.
+Proof.
+  intros Hnz H0.
+  apply Qlem_1 with (b:=b/c) in H0; eauto.
+  rewrite Qmult_comm, Qmult_div_r in H0; auto.
+Qed.
+
+Lemma Qdiv_1_Qeq (a b : Q) :
+  a / b == 1 ->
+  a == b.
+Proof.
+  intros H0.
+  destruct (Qeq_bool b 0) eqn:Hb.
+  - apply Qeq_bool_eq in Hb.
+    rewrite Hb, Qdiv_0_den in H0; lra.
+  - apply Qeq_bool_neq in Hb; apply Qlem_1 in H0; lra.
+Qed.
+
+Lemma Qdiv_Qeq_1 (a b : Q) :
+  ~ b == 0 ->
+  a == b ->
+  a / b == 1.
+Proof. intros H0 H1; rewrite H1; field; auto. Qed.
+
+Lemma Qdiv_inversion_1 a b c :
+  ~ c == 0 ->
+  (a / c) / (b / c) == 1 ->
+  a / b == 1.
+Proof.
+  intros H0 H1.
+  destruct (Qeq_bool b 0) eqn:Hb.
+  - apply Qeq_bool_eq in Hb.
+    rewrite Hb, Qdiv_0_num, Qdiv_0_den in H1; lra.
+  - apply Qeq_bool_neq in Hb.
+    apply Qdiv_Qeq_1; auto.
+    apply Qdiv_1_Qeq in H1.
+    apply Qdiv_num_inversion in H1; auto.
+Qed.
+
+Lemma Qdiv_lt_1 (a b : Q) :
+  0 < b ->
+  a < b ->
+  a / b < 1.
+Proof. intros H0 H1; apply Qlt_shift_div_r; lra. Qed.
+
+Lemma Qmake_lt_1 (n d : nat) :
+  (n < d)%nat ->
+  Z.of_nat n # Pos.of_nat d < 1.
+Proof.
+  intro Hlt.
+  rewrite Qmake_Qdiv.
+  rewrite Z_pos_of_nat; try lia.
+  apply Qdiv_lt_1.
+  - replace 0 with (inject_Z (Z.of_nat 0)) by reflexivity.
+    rewrite <- Zlt_Qlt.
+    apply inj_lt; lia.
+  - rewrite <- Zlt_Qlt.
+    apply inj_lt; lia.
+Qed.
+
+Lemma inject_Z_pos_positive (p : positive) :
+  0 < inject_Z (Z.pos p).
+Proof. reflexivity. Qed.
+
+Lemma inject_Z_pos_nonzero (p : positive) :
+  ~ inject_Z (Z.pos p) == 0.
+Proof. compute; congruence. Qed.
+
+Lemma pos_num_le_den (n d : positive) :
+  Z.pos n # d <= 1 ->
+  (n <= d)%positive.
+Proof.
+  intro H.
+  rewrite Qmake_Qdiv in H.
+  apply (Qmult_le_compat_r _ _ (inject_Z (Z.pos d))) in H.
+  - rewrite Qmult_1_l in H.
+    rewrite Qmult_comm in H.
+    rewrite Qmult_div_r in H.
+    + rewrite <- Zle_Qle in H; apply H.
+    + apply inject_Z_pos_nonzero.
+  - apply Qlt_le_weak, inject_Z_pos_positive.
+Qed.
+
+Lemma Q_num_le_den p :
+  p <= 1 ->
+  (Z.to_nat (Qnum p) <= Pos.to_nat (Qden p))%nat.
+Proof.
+  intros Hle.
+  destruct p. simpl.
+  destruct Qnum, Qden; simpl; try lia;
+    apply Pos2Nat.inj_le, pos_num_le_den; auto.
+Qed.

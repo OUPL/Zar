@@ -10,8 +10,8 @@ Require Import Coq.micromega.Lqa.
 Require Import Coq.micromega.Lia.
 Local Open Scope program_scope.
 
+Require Import axioms.
 Require Import Q.
-
 
 (* Types with decidable equality *)
 Class EqType (A : Type) : Type :=
@@ -27,6 +27,23 @@ Instance EqType_nat : EqType nat :=
   {| eqb := Nat.eqb
    ; eqb_spec := Nat.eqb_spec |}.
 
+Fixpoint list_eqb {A : Type} `{EqType A} (l1 l2 : list A) : bool :=
+  match (l1, l2) with
+  | (nil, nil) => true
+  | (x :: l1', y :: l2') => eqb x y && list_eqb l1' l2'
+  | _ => false
+  end.
+
+Program Instance EqType_list {A : Type} `{EqType A} : EqType (list A) :=
+  {| eqb := list_eqb |}.
+Next Obligation.
+  revert y.
+  induction x; intros []; simpl; try (constructor; congruence).
+  destruct (eqb_spec a a0); subst; simpl.
+  - destruct (IHx l); subst; constructor; congruence.
+  - constructor; congruence.
+Qed.
+
 Lemma eqb_refl {A : Type} `{EqType A} (x : A) :
   eqb x x = true.
 Proof. destruct (eqb_spec x x); congruence. Qed.
@@ -37,21 +54,17 @@ Class OType (A : Type) : Type :=
   ; leq_preorder : PreOrder leq
   }.
 
+Notation "x '⊑' y" := (leq x y) (at level 80, no associativity) : order_scope.
+Local Open Scope order_scope.
+
 Instance OType_Reflexive A `{o : OType A} : Reflexive leq.
 Proof. destruct o; typeclasses eauto. Qed.
 
 Instance OType_Transitive A `{o : OType A} : Transitive leq.
 Proof. destruct o; typeclasses eauto. Qed.
 
-(* leq : A -> A -> Prop *)
-
-(* leq x : A -> Prop *)
-
 (** Greater than *)
 Definition gt {A : Type} `{OType A} : relation A := fun x y => not (leq x y).
-
-(* (** Greater than or equal to *) *)
-(* Definition ge {A : Type} `{OType A} : relation A := flip leq. *)
 
 (* Pointed ordered types *)
 Class PType (A : Type) `{o : OType A} : Type :=
@@ -175,26 +188,23 @@ Proof.
     eapply Htrans; eauto.
 Qed.
 
-(* Definition monotone {A B : Type} `{OType A} `{OType B} (f : A -> B) := *)
-(*   forall x y, leq x y -> leq (f x) (f y). *)
-
 Definition monotone {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
   Proper (leq ==> leq) f.
-(* Lemma monotone_proper {A B : Type} `{OType A} `{OType B} (f : A -> B) : *)
-(*   monotone f <-> Proper (leq ==> leq) f. *)
-(* Proof. intuition. Qed. *)
 
 Definition monotone_decreasing {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
   Proper (leq ==> flip leq) f.
-
-(* Definition monotone_decreasing {A B : Type} `{OType A} `{OType B} (f : A -> B) := *)
-(*   forall x y, leq x y -> leq (f y) (f x). *)
 
 Lemma monotone_chain {A B : Type} `{OType A} `{OType B} (f : A -> B) (g : nat -> A) :
   monotone f ->
   chain g ->
   chain (f ∘ g).
 Proof. intros Hmono Hg i; apply Hmono, Hg. Qed.
+
+Lemma monotone_compose {A B C : Type} `{OType A} `{OType B} `{OType C} (f : A -> B) (g : B -> C) :
+  monotone f ->
+  monotone g ->
+  monotone (g ∘ f).
+Proof. intros Hf Hg x y Hleq; apply Hg, Hf; auto. Qed.
 
 Definition ratio_chain (f g : nat -> Q) := fun i => f i / g i.
 
@@ -601,6 +611,7 @@ Proof.
   symmetry; apply f_Qeq_equ; apply Heq.
 Qed.
 
+(** Uses LPO *)
 Lemma supremum_converges (sup : Q) (f : nat -> Q) :
   chain f ->
   supremum sup f ->
@@ -609,13 +620,34 @@ Proof.
   intros Hchain [Hub Hlub] eps Heps.
   unfold upper_bound in Hub.
   simpl in *.
+  assert (H0: forall n, sup - f n < eps \/ ~ (sup - f n < eps)).
+  { intro n; lra. }
+  destruct (LPO _ H0) as [H' | H']; auto.  
+  assert (H1: forall n, ~ (sup - f n < eps)).
+  { intros n HC.
+    apply H'; exists n; auto. }
+  assert (H2: forall n, eps <= sup - f n).
+  { intros n. specialize (H1 n). lra. }
+  specialize (Hlub (sup - eps)).
+  assert (H: upper_bound (sup - eps) f).
+  { intros i; simpl; specialize (H2 i); lra. }
+  specialize (Hlub H); lra.
+Qed.
 
-  assert (~ (forall n, eps <= sup - f n)).
-  { intros Hle.
-    specialize (Hlub (sup - eps)).
-    assert (H0: upper_bound (sup - eps) f).
-    { intros i; simpl; specialize (Hle i); lra. }
-    specialize (Hlub H0). lra. }
+Definition continuous {A B : Type} `{OType A} `{OType B} (f : A -> B) :=
+  forall g : nat -> A,
+    chain g ->
+    forall sup,
+      supremum sup g ->
+      supremum (f sup) (f ∘ g).
 
-  (* TODO: hmm.. is there a constructive argument? Could use LPO. *)
-Admitted.
+Definition is_cpo (A : Type) `{OType A} :=
+  forall ch : nat -> A, chain ch -> exists sup, supremum sup ch.
+
+(* This isn't true unless we extend Q with +∞ as a top element. This
+   actually means that our relational wp semantics is somewhat
+   ill-defined because there isn't a proper ω-cpo structure on
+   functions from states to Q. *)
+(* Lemma is_cpo_Q : is_cpo Q. *)
+(* Proof. *)
+(*   intros ch Hchain. *)

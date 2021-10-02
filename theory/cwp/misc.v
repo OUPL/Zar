@@ -2,13 +2,29 @@
 
 Set Implicit Arguments.
 Require Import PeanoNat.
+Require Import Nat.
 Require Import List.
 Require Import Coq.micromega.Lia.
 Require Import Coq.QArith.QArith.
 Require Import Permutation.
+Require Import ExtLib.Structures.Monoid.
+
+From ITree Require Import ITree.
+From Paco Require Import paco.
+
 Import ListNotations.
 
-(* Require Import order. *)
+Ltac destruct_upaco :=
+  match goal with
+  | [ H: context[upaco1 _ bot1 _] |- _] =>
+    destruct H as [H | H]; try solve[inversion H]
+  | [ H: context[upaco2 _ bot2 _ _] |- _] =>
+    destruct H as [H | H]; try solve[inversion H]
+  end.
+
+Lemma _observe_observe {A : Type} {E : Type -> Type} (t : itree E A) :
+  _observe t = observe t.
+Proof. reflexivity. Qed.
 
 Definition tuple (A B C : Type) (f : A -> B) (g : A -> C) (x : A) : B*C :=
   (f x, g x).
@@ -32,19 +48,6 @@ Proof.
     + etransitivity. apply IHl; auto.
       apply Nat.le_max_r.
 Qed.
-
-(* Lemma list_max_monotone : monotone (list_max). *)
-(* Proof. *)
-(*   intros l1 l2; unfold leq; simpl; intro Hleq; unfold Nat.le. *)
-(*   induction l1; simpl. *)
-(*   - lia. *)
-(*   - destruct (Nat.leb_spec a (list_max l1)). *)
-(*     + rewrite max_r; auto; apply IHl1. *)
-(*       intros x Hin. apply Hleq. right; auto. *)
-(*     + rewrite max_l. *)
-(*       * apply list_max_spec; apply Hleq; left; auto. *)
-(*       * lia. *)
-(* Qed. *)
 
 Lemma NoDup_app {A : Type} (l1 l2 : list A) :
   NoDup (l1 ++ l2) ->
@@ -229,6 +232,17 @@ Proof.
       apply is_prefix_app.
 Qed.
 
+Lemma is_prefix_exists {A : Type} (l1 l2 : list A) :
+  is_prefix l1 l2 <-> exists l, l1 ++ l = l2.
+Proof.
+  split; intro H.
+  - induction H.
+    + exists l2; reflexivity.
+    + destruct IHis_prefix as [l IH]; subst.
+      exists l; reflexivity.
+  - destruct H as [l ?]; subst; apply is_prefix_app.
+Qed.
+
 Inductive list_rel {A B : Type} (R : A -> B -> Prop) : list A -> list B -> Prop :=
 | list_rel_nil : list_rel R [] []
 | list_rel_cons : forall x y xs ys,
@@ -255,8 +269,6 @@ Proof.
   - apply list_rel_app; split; auto.
     constructor; auto; constructor.
 Qed.
-
-(* Definition list_eq {A : Type} : list A -> list A ->  Prop := list_rel eq. *)
 
 Instance Reflexive_list_rel {A : Type} (R : A -> A -> Prop) `{Reflexive A R}
   : Reflexive (list_rel R).
@@ -351,4 +363,187 @@ Proof.
     exists i; split; auto.
   - destruct H; try contradiction; subst.
     exists n; split; auto.
+Qed.
+
+Lemma fst_divmod (n : nat) :
+  fst (divmod n 1 0 1) = (n / 2)%nat.
+Proof. reflexivity. Qed.
+
+Lemma mod_2_dec (n : nat) :
+  n mod 2 = 0%nat \/ n mod 2 = 1%nat.
+Proof.
+  assert (n mod 2 < 2)%nat.
+  { apply Nat.mod_upper_bound; auto. }
+  lia.
+Qed.
+
+Lemma mod_2_succ (n : nat) :
+  n mod 2 = 0%nat -> (S n) mod 2 = 1%nat.
+Proof.
+  intro H0; simpl in *.
+  generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  generalize (Nat.divmod_spec n 1 0 0 (Nat.le_0_l _)).
+  intro H2; destruct (Nat.divmod n 1 0 0); destruct H2 as [H2 H3].
+  simpl in *; destruct n3; lia.
+Qed.
+
+Lemma mod_2_pred (n : nat) :
+  n mod 2 = 1%nat -> (pred n) mod 2 = 0%nat.
+Proof.
+  intro H0; simpl in *.
+  generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  generalize (Nat.divmod_spec (pred n) 1 0 1 (Nat.le_refl _)).
+  intro H2; destruct (Nat.divmod (pred n) 1 0 1); destruct H2 as [H2 H3].
+  simpl in *; destruct n3; lia.
+Qed.
+
+Lemma mod_2_nonzero (n : nat) :
+  n mod 2 = 1%nat -> (0 < n)%nat.
+Proof.
+  intro H0; simpl in *.
+  generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  simpl in *; lia.
+Qed.
+
+Lemma mod_2_div_succ (n : nat) :
+  n mod 2 = 0%nat -> (n / 2)%nat = (S n / 2)%nat.
+Proof.
+  intro H0; simpl in *.
+  generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  generalize (Nat.divmod_spec n 1 0 0 (Nat.le_0_l _)).
+  intro H2; destruct (Nat.divmod n 1 0 0); destruct H2 as [H2 H3].
+  simpl in *; destruct n1, n3; lia.
+Qed.
+
+Lemma mod_2_div_pred (n : nat) :
+  n mod 2 = 1%nat -> (n / 2)%nat = (pred n / 2)%nat.
+Proof.
+  intro H0; simpl in *.
+  generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  generalize (Nat.divmod_spec (pred n) 1 0 1 (Nat.le_refl _)).
+  intro H2; destruct (Nat.divmod (pred n) 1 0 1); destruct H2 as [H2 H3].
+  simpl in *; destruct n1, n3; lia.
+Qed.
+
+Lemma mod_n_div (n : nat) :
+  n mod 2 = 0%nat ->
+  (2 * (n / 2))%nat = n.
+Proof.
+  simpl; generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  simpl in *; destruct n1; lia.
+Qed.
+
+Lemma mod_n_div_plus_1 (n : nat) :
+  n mod 2 = 1%nat ->
+  (2 * (n / 2) + 1)%nat = n.
+Proof.
+  simpl; generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  simpl in *; destruct n1; lia.
+Qed.
+
+Lemma mod_2_div_mul_pred (n : nat) :
+  n mod 2 = 1%nat ->
+  (n / 2 * 2)%nat = pred n.
+Proof.
+  simpl; generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  simpl in *; destruct n1; lia.
+Qed.
+
+Lemma mod_2_S_O (i n : nat) :
+  i mod 2 = S n -> n = O.
+Proof. intro Hmod; destruct (mod_2_dec i); congruence. Qed.
+
+Lemma mod_2_S_O' (i n : nat) :
+  i mod 2 = S n -> i mod 2 = 1%nat.
+Proof. intro Hmod; destruct (mod_2_dec i); congruence. Qed.
+
+Lemma existsb_in (n : nat) (ns : list nat) :
+  existsb (Nat.eqb n) ns = true <-> In n ns.
+Proof.
+  split; intro H.
+  - induction ns.
+    + unfold existsb in H; congruence.
+    + simpl in *; apply orb_prop in H; destruct H.
+      * apply Nat.eqb_eq in H; left; auto.
+      * right; apply IHns; auto.
+  - induction ns.
+    + inversion H.
+    + destruct H; subst; simpl.
+      * rewrite Nat.eqb_refl; reflexivity.
+      * rewrite IHns; auto; apply orb_true_r.
+Qed.
+
+Lemma existsb_not_in (n : nat) (ns : list nat) :
+  existsb (Nat.eqb n) ns = false <-> ~ In n ns.
+Proof.
+  split; intro H.
+  - intro HC; apply existsb_in in HC; congruence.
+  - destruct (existsb (Nat.eqb n) ns) eqn:Hn; auto.
+    apply existsb_in in Hn; congruence.
+Qed.
+
+Lemma existsb_false_forall {A : Type} (P : A -> bool) (l : list A) :
+  existsb P l = false ->
+  forall x, In x l -> P x = false.
+Proof.
+  induction l; intros H0 x Hin.
+  - inversion Hin.
+  - simpl in *.
+    destruct Hin as [? | Hin]; subst.
+    + destruct (P x); simpl in H0; congruence.
+    + destruct (P a); simpl in H0; try congruence.
+      eapply IHl in H0; eauto.
+Qed.
+
+Lemma app_nil_inv {A : Type} (l1 l2 : list A) :
+  l1 ++ l2 = nil ->
+  l1 = nil /\ l2 = nil.
+Proof. intro H; destruct l1; auto; inversion H. Qed.
+
+Lemma inj_spec {A B : Type} (f : A -> B) (g : B -> A) :
+  (forall x, g (f x) = x) ->
+  forall x y, f x = f y -> x = y.
+Proof.
+  intros H0 x y H1.
+  rewrite <- (H0 x), <- (H0 y), H1, H0; reflexivity.
+Qed.
+
+Lemma surj_spec {A B : Type} (f : A -> B) (g : B -> A) :
+  (forall x, f (g x) = x) ->
+  forall y, exists x, f x = y.
+Proof. intros H0 y; exists (g y); auto. Qed.
+
+Lemma odd_div_add (n : nat) :
+  n mod 2 = 1%nat ->
+  (n / 2 + n / 2 + 1)%nat = n.
+Proof.
+  intro Hmod; simpl in *.
+  generalize (Nat.divmod_spec n 1 0 1 (Nat.le_refl _)).
+  intro H; destruct (Nat.divmod n 1 0 1); destruct H as [H H1].
+  simpl in *; lia.
+Qed.
+
+Definition option_mult {A : Type} (M : Monoid A) (x y : option A) : option A :=
+  match (x, y) with
+  | (Some l, Some r) => Some (monoid_plus M l r)
+  | _ => None
+  end.
+
+Lemma option_mult_unit_r {A : Type} (M : Monoid A) (x : option A) :
+  option_mult M x None = None.
+Proof. destruct x; auto. Qed.
+
+Lemma option_mult_assoc {A : Type} {M : Monoid A} (L : MonoidLaws M) (x y z : option A) :
+  option_mult M (option_mult M x y) z = option_mult M x (option_mult M y z).
+Proof.
+  destruct x; destruct y; destruct z; auto.
+  unfold option_mult; simpl; f_equal; apply monoid_assoc.
 Qed.

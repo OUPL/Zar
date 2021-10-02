@@ -172,7 +172,7 @@ Proof.
 Qed.
 
 (** cwpf and normalized inference after compilation coincide when c is
-  well-formed. *)
+    well-formed. *)
 Theorem cwpf_infer c f n :
   wf_cpGCL c ->
   cwpf c f ==f infer f ∘ evalCompile c n.

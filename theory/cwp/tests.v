@@ -1,41 +1,41 @@
-(* (** Testing functional CWP and compilation+inference on example *)
-(*     programs.  *) *)
+(** Testing functional CWP and compilation+inference on example *)
+(*     programs.  *)
 
-(* Set Implicit Arguments. *)
-(* Require Import Coq.Program.Basics. *)
-(* Require Import Coq.QArith.QArith. *)
-(* Require Import Coq.micromega.Lqa. *)
-(* Require Import FunctionalExtensionality. *)
-(* Local Open Scope program_scope. *)
+Set Implicit Arguments.
+Require Import Coq.Program.Basics.
+Require Import Coq.QArith.QArith.
+Require Import Coq.micromega.Lqa.
+Require Import FunctionalExtensionality.
+Local Open Scope program_scope.
 
-(* Require Import List. *)
-(* Import ListNotations. *)
+Require Import List.
+Import ListNotations.
 
-(* Require Import compile. *)
-(* Require Import cpGCL. *)
-(* Require Import cwp. *)
-(* Require Import cwp_cwpf. *)
-(* Require Import geometric. *)
-(* Require Import infer. *)
+Require Import compile.
+Require Import cpGCL.
+Require Import cwp.
+Require Import cwp_cwpf.
+Require Import geometric.
+Require Import infer.
 (* Require Import measure. *)
-(* Require Import misc. *)
-(* Require Import order. *)
-(* Require Import Q. *)
-(* Require Import tree. *)
-(* Require Import itree. *)
-(* Local Open Scope Q_scope. *)
+Require Import misc.
+Require Import order.
+Require Import Q.
+Require Import tree.
+Require Import itree.
+Local Open Scope Q_scope.
 
-(* (** Testing compilation and inference on example programs *) *)
+(** Testing compilation and inference on example programs *)
 
-(* Definition sample (x : nat) (p : Q) : cpGCL := *)
-(*   CChoice p (CAssign x (const true)) (CAssign x (const false)). *)
+Definition sample (x : nat) (p : Q) : cpGCL :=
+  CChoice p (CAssign x (const true)) (CAssign x (const false)).
 
-(* Definition goldfish_piranha : cpGCL := *)
-(*   sample 0%nat (1#2) ;;; *)
-(*   CAssign 1%nat (const true) ;;; *)
-(*   CChoice (1#2) (CAssign 2%nat (fun st => st 0%nat)) *)
-(*                 (CAssign 2%nat (fun st => st 1%nat)) ;;; *)
-(*   CObserve (fun st => eqb (st 2%nat) true). *)
+Definition goldfish_piranha : cpGCL :=
+  sample 0%nat (1#2) ;;;
+  CAssign 1%nat (const true) ;;;
+  CChoice (1#2) (CAssign 2%nat (fun st => st 0%nat))
+                (CAssign 2%nat (fun st => st 1%nat)) ;;;
+  CObserve (fun st => eqb (st 2%nat) true).
 
 (* Definition goldfish_piranha_tree : tree St := *)
 (*   evalCompile' goldfish_piranha empty. *)

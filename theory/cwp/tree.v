@@ -12,15 +12,13 @@ Require Import ExtLib.Structures.Monad.
 Require Import Permutation.
 Import ListNotations.
 
-(* From Equations Require Import Equations. *)
-
 Require Import borel.
-Require Import measure.
 Require Import misc.
 Require Import order.
 Require Import Q.
+  
 
-(** Choice trees with fix (loop) nodes ("fix trees"?) *)
+(** Choice trees with fix (loop) nodes ("choice-fix trees"). *)
 Inductive tree (A : Type) : Type :=
 | Leaf : A -> tree A
 | Fail : nat -> tree A
@@ -123,8 +121,6 @@ Proof. intro t; induction t; constructor; auto; reflexivity. Qed.
 Instance Symmetric_tree_eq {A : Type} `{EqType A} : Symmetric (@tree_eq A).
 Proof. induction 1; constructor; auto; lra. Qed.
 
-(* Instance Transitive_tree_eq {A : Type} `{EqType A} : Transitive (@tree_eq A). *)
-
 Lemma tree_eqb_refl {A : Type} `{EqType A} (t : tree A) :
   tree_eqb t t = true.
 Proof.
@@ -187,19 +183,6 @@ Proof.
     + right; intro HC; inversion HC; subst; congruence.
 Qed.
 
-(** Not true unless we change tree_leq to be slightly less permissive
-    in the fail case. *)
-(* Lemma tree_eq_leq {A : Type} (t1 t2 : tree A) : *)
-(*   tree_eq t1 t2 <-> tree_leq t1 t2 /\ tree_leq t2 t1. *)
-(* Proof. *)
-(*   split. *)
-(*   - intro Heq. induction Heq; split; constructor; intuition. *)
-(*   - intros [Hleq0 Hleq1]. *)
-(*     + inversion Hleq0; subst; inversion Hleq1; subst. *)
-(*       * constructor. *)
-(*       *  *)
-(* Admitted. *)
-
 Lemma tree_leq_tree_leqb {A : Type} `{eq: EqType A} (t1 t2 : tree A) :
   tree_leq t1 t2 <-> tree_leqb t1 t2 = true.
 Proof. destruct (tree_leqb_spec t1 t2); split; congruence. Qed.
@@ -249,6 +232,32 @@ Inductive free_in {A : Type} : nat -> tree A -> Prop :=
     n <> m ->
     free_in n t ->
     free_in n (Fix m t).
+
+Fixpoint free_inb {A : Type} (n : nat) (t : tree A) : bool :=
+  match t with
+  | Leaf _ => false
+  | Fail _ m => n =? m
+  | Choice _ t1 t2 => free_inb n t1 || free_inb n t2
+  | Fix m t1 => negb (n =? m) && free_inb n t1
+  end.
+
+Lemma free_inb_spec {A : Type} (n : nat) (t : tree A)
+  : reflect (free_in n t) (free_inb n t).
+Proof.
+  induction t; simpl.
+  - constructor; intro HC; inversion HC.
+  - destruct (Nat.eqb_spec n n0); subst; constructor.
+    + constructor.
+    + intro HC; inversion HC; subst; congruence.
+  - destruct IHt1; destruct IHt2; simpl; constructor;
+      try solve[constructor; auto];
+      intro HC; inversion HC; subst; congruence.
+  - destruct (Nat.eqb_spec n n0); subst; simpl.
+    + constructor; intro HC; inversion HC; subst; congruence.
+    + destruct IHt; constructor.
+      * constructor; auto.
+      * intro HC; inversion HC; subst; congruence.
+Qed.
 
 Inductive not_free_in {A : Type} : nat -> tree A -> Prop :=
 | not_free_in_leaf : forall n x, not_free_in n (Leaf x)
@@ -336,7 +345,7 @@ Proof.
 Qed.
 
 Lemma free_in_dec {A : Type} (n : nat) (t : tree A) :
-  free_in n t \/ not_free_in n t.
+  { free_in n t } + { not_free_in n t }.
 Proof.
   induction t.
   - right; constructor.
@@ -578,6 +587,19 @@ Inductive wf_tree' {A : Type} : tree A -> Prop :=
        in t. *)
     wf_tree' (Fix n t).
 
+Inductive wf_tree'' {A : Type} : tree A -> Prop :=
+| wf_leaf'' : forall x, wf_tree'' (Leaf x)
+| wf_fail'' : forall n, wf_tree'' (Fail _ n)
+| wf_choice'' : forall p t1 t2,
+    0 < p -> p < 1 ->
+    wf_tree'' t1 -> wf_tree'' t2 ->
+    wf_tree'' (Choice p t1 t2)
+| wf_fix'' : forall n t,
+    wf_tree'' t ->
+    (* n is not bound by another fix inside t. *)
+    not_bound_in n t ->
+    wf_tree'' (Fix n t).
+
 Lemma wf_tree'_wf_tree {A : Type} (t : tree A) :
   wf_tree' t -> wf_tree t.
 Proof.
@@ -586,38 +608,11 @@ Proof.
   apply H2 in HC; lia.
 Qed.
 
-(* Inductive all_support {A : Type} (pred : A -> Prop) : tree A -> Prop := *)
-(* | all_support_leaf : forall x, pred x -> all_support pred (Leaf x) *)
-(* | all_support_fail : forall n, all_support pred (Fail _ n) *)
-(* | all_support_choice1 : forall p t1 t2, *)
-(*     p == 0 -> *)
-(*     all_support pred t2 -> *)
-(*     all_support pred (Choice p t1 t2) *)
-(* | all_support_choice2 : forall p t1 t2, *)
-(*     p == 1 -> *)
-(*     all_support pred t1 -> *)
-(*     all_support pred (Choice p t1 t2) *)
-(* | all_support_choice3 : forall p t1 t2, *)
-(*     0 < p -> p < 1 -> *)
-(*     all_support pred t1 -> *)
-(*     all_support pred t2 -> *)
-(*     all_support pred (Choice p t1 t2) *)
-(* | all_support_fix : forall l t, *)
-(*     all_support pred t -> *)
-(*     all_support pred (Fix l t). *)
-
-(* Fixpoint all_supportb {A : Type} (f : A -> bool) (t : tree A) : bool := *)
-(*   match t with *)
-(*   | Leaf x => f x *)
-(*   | Fail _ _ => true *)
-(*   | Choice p t1 t2 => *)
-(*     if Qeq_bool p 0 *)
-(*     then all_supportb f t2 *)
-(*     else if Qeq_bool p 1 *)
-(*          then all_supportb f t1 *)
-(*          else all_supportb f t1 && all_supportb f t2 *)
-(*   | Fix n t1 => all_supportb f t1 *)
-(*   end. *)
+Lemma wf_tree''_wf_tree {A : Type} (t : tree A) :
+  wf_tree'' t -> wf_tree t.
+Proof.
+  induction t; simpl; intro Hwf; constructor; inversion Hwf; subst; auto; lra.
+Qed.
 
 Lemma wf_tree_inv_choice1 {A : Type} p (t1 t2 : tree A) :
   wf_tree (Choice p t1 t2) ->
@@ -628,43 +623,6 @@ Lemma wf_tree_inv_choice2 {A : Type} p (t1 t2 : tree A) :
   wf_tree (Choice p t1 t2) ->
   wf_tree t2.
 Proof. intro Hwf; inversion Hwf; auto. Qed.
-
-(* Lemma all_supportb_spec {A : Type} (f : A -> bool) (t : tree A) : *)
-(*   wf_tree t -> *)
-(*   reflect (all_support (fun x => f x = true) t) (all_supportb f t). *)
-(* Proof. *)
-(*   induction t; intro Hwf; simpl. *)
-(*   - destruct (f a) eqn:Hf; constructor. *)
-(*     + constructor; auto. *)
-(*     + intro HC; inversion HC; subst; congruence. *)
-(*   - repeat constructor. *)
-(*   - destruct (Qeq_dec q 0). *)
-(*     + rewrite Qeq_eq_bool; auto. *)
-(*       destruct IHt2. *)
-(*       * eapply wf_tree_inv_choice2; eauto. *)
-(*       * repeat constructor; auto. *)
-(*       * constructor; intro HC; inversion HC; subst; try congruence; lra. *)
-(*     + rewrite Qeq_bool_false; auto. *)
-(*       destruct (Qeq_dec q 1). *)
-(*       * rewrite Qeq_eq_bool; auto. *)
-(*         destruct IHt1. *)
-(*         ++ eapply wf_tree_inv_choice1; eauto. *)
-(*         ++ constructor; apply all_support_choice2; auto. *)
-(*         ++ constructor; intro HC; inversion HC; subst; congruence; try lra. *)
-(*       * rewrite Qeq_bool_false; auto. *)
-(*         destruct IHt1, IHt2; simpl; *)
-(*           try solve [eapply wf_tree_inv_choice1; eauto]; *)
-(*           try solve [eapply wf_tree_inv_choice2; eauto]; constructor. *)
-(*         ++ inversion Hwf; subst. *)
-(*            apply all_support_choice3; auto; lra. *)
-(*         ++ intro HC; inversion HC; subst; congruence. *)
-(*         ++ intro HC; inversion HC; subst; congruence. *)
-(*         ++ intro HC; inversion HC; subst; congruence. *)
-(*   - destruct IHt. *)
-(*     + inversion Hwf; auto. *)
-(*     + repeat constructor; auto. *)
-(*     + constructor. intro HC; inversion HC; congruence. *)
-(* Qed. *)
 
 Lemma bound_in_bind {A B : Type} (t : tree A) (k : A -> tree B) (m : nat) :
   bound_in m (bind t k) ->
@@ -971,8 +929,8 @@ Proof.
 Qed.
 
 (** A structural property of a tree that underapproximates the
-  semantic property of nondivergence (it's a bit stronger than
-  necessary). *)
+    semantic property of nondivergence (it's a bit stronger than
+    necessary). *)
 Inductive nondivergent {A : Type} : tree A -> Prop :=
 | nondivergent_leaf : forall x, nondivergent (Leaf x)
 | nondivergent_choice1 : forall p t1 t2,
@@ -991,68 +949,6 @@ Inductive nondivergent {A : Type} : tree A -> Prop :=
     nondivergent t ->
     nondivergent (Fix n t).
 
-(** TODO: create structural decidable predicate such that whenever it
-    is true, infer_fail t n == 1, and whenever it is false,
-    infer_fail t n < 1. *)
-
-(* Inductive free_labels {A : Type} : tree A -> list nat -> Prop := *)  
-
-(* Inductive diverges {A : Type} : tree A -> list nat -> Prop := *)
-(* | diverges_fail : forall n ns, *)
-(*     In n ns -> *)
-(*     diverges (Fail _ n) ns *)
-(* | diverges_choice1 : forall p t1 t2 ns, *)
-(*     1 <= p -> *)
-(*     diverges t1 ns -> *)
-(*     diverges (Choice p t1 t2) ns *)
-(* | diverges_choice2 : forall p t1 t2 ns, *)
-(*     p <= 0 -> *)
-(*     diverges t2 ns -> *)
-(*     diverges (Choice p t1 t2) ns *)
-(* | diverges_choice3 : forall p t1 t2 ns, *)
-(*     0 < p -> p < 1 -> *)
-(*     diverges t1 ns -> *)
-(*     diverges t2 ns -> *)
-(*     diverges (Choice p t1 t2) ns *)
-(* | diverges_fix : forall n t ns, *)
-(*     diverges t (n :: ns) -> *)
-(*     diverges (Fix n t) ns. *)
-
-(* Fixpoint divergesb {A : Type} (t : tree A) (ns : list nat) : bool := *)
-(*   match t with *)
-(*   | Leaf _ => false *)
-(*   | Fail _ n => existsb (Nat.eqb n) ns *)
-(*   | Choice p t1 t2 => if Qle_bool 1 p then divergesb t1 ns *)
-(*                      else if Qle_bool p 0 then divergesb t2 ns *)
-(*                           else divergesb t1 ns && divergesb t2 ns *)
-(*   | Fix n t1 => divergesb t1 (n :: ns) *)
-(*   end. *)
-
-Lemma existsb_in (n : nat) (ns : list nat) :
-  existsb (Nat.eqb n) ns = true <-> In n ns.
-Proof.
-  split; intro H.
-  - induction ns.
-    + unfold existsb in H; congruence.
-    + simpl in *; apply orb_prop in H; destruct H.
-      * apply Nat.eqb_eq in H; left; auto.
-      * right; apply IHns; auto.
-  - induction ns.
-    + inversion H.
-    + destruct H; subst; simpl.
-      * rewrite Nat.eqb_refl; reflexivity.
-      * rewrite IHns; auto; apply orb_true_r.
-Qed.
-
-Lemma existsb_not_in (n : nat) (ns : list nat) :
-  existsb (Nat.eqb n) ns = false <-> ~ In n ns.
-Proof.
-  split; intro H.
-  - intro HC; apply existsb_in in HC; congruence.
-  - destruct (existsb (Nat.eqb n) ns) eqn:Hn; auto.
-    apply existsb_in in Hn; congruence.
-Qed.
-
 Lemma Qle_bool_false (a b : Q)  :
   Qle_bool a b = false <-> b < a.
 Proof.
@@ -1062,38 +958,6 @@ Proof.
   - destruct (Qle_bool a b) eqn:Hq; auto.
     apply Qle_bool_iff in Hq; lra.
 Qed.
-
-(* Lemma divergesb_spec {A : Type} (t : tree A) (ns : list nat) : *)
-(*   reflect (diverges t ns) (divergesb t ns). *)
-(* Proof. *)
-(*   revert ns. *)
-(*   induction t; intros ns; simpl. *)
-(*   - constructor; intro HC; inversion HC. *)
-(*   - destruct (existsb (Nat.eqb n) ns) eqn:H. *)
-(*     + constructor; constructor; apply existsb_in; auto. *)
-(*     + constructor; intro HC; apply existsb_not_in in H. *)
-(*       inversion HC; congruence. *)
-(*   - destruct (Qle_bool 1 q) eqn:Hq. *)
-(*     + apply Qle_bool_iff in Hq. *)
-(*       destruct (IHt1 ns); constructor. *)
-(*       * apply diverges_choice1; auto. *)
-(*       * intro HC; inversion HC; subst; auto; lra. *)
-(*     + apply Qle_bool_false in Hq. *)
-(*       destruct (Qle_bool q 0) eqn:Hq'. *)
-(*       apply Qle_bool_iff in Hq'. *)
-(*       destruct (IHt2 ns); constructor. *)
-(*       * apply diverges_choice2; auto. *)
-(*       * intro HC; inversion HC; auto; lra. *)
-(*       * apply Qle_bool_false in Hq'. *)
-(*         destruct (IHt1 ns); simpl. *)
-(*         -- destruct (IHt2 ns); constructor. *)
-(*            ++ apply diverges_choice3; auto. *)
-(*            ++ intro HC; inversion HC; auto; lra. *)
-(*         -- constructor; intro HC; inversion HC; auto; lra. *)
-(*   - destruct (IHt (n :: ns)); constructor. *)
-(*     + constructor; auto. *)
-(*     + intro HC; inversion HC; congruence. *)
-(* Qed. *)
 
 Inductive in_tree {A : Type} : A -> tree A -> Prop :=
 | in_tree_leaf : forall x, in_tree x (Leaf x)
@@ -1115,25 +979,393 @@ Fixpoint in_treeb {A : Type} `{EqType A} (x : A) (t : tree A) : bool :=
   | Fix _ t1 => in_treeb x t1
   end.
 
-(* Inductive nondivergent' {A : Type} : list nat -> tree A -> Prop := *)
-(* | nondivergent'_leaf : forall l x, nondivergent' l (Leaf x) *)
-(* | nondivergent'_fail : forall l n, In n l -> nondivergent' l (Fail _ n) *)
-(* | nondivergent'_choice1 : forall l p t1 t2, *)
-(*     p == 0 -> *)
-(*     nondivergent' l t2 -> *)
-(*     nondivergent' l (Choice p t1 t2) *)
-(* | nondivergent'_choice2 : forall l p t1 t2, *)
-(*     p == 1 -> *)
-(*     nondivergent' l t1 -> *)
-(*     nondivergent' l (Choice p t1 t2) *)
-(* | nondivergent'_choice3 : forall l p t1 t2, *)
-(*     0 < p -> p < 1 -> *)
-(*     nondivergent' l t1 -> nondivergent' l t2 -> *)
-(*     nondivergent' l (Choice p t1 t2) *)
-(* | nondivergent'_fix : forall l n t x, *)
-(*     nondivergent' (n :: l) t -> *)
-(*     in_tree x t -> *)
-(*     nondivergent' l (Fix n t). *)
+Inductive leaf_reachable {A : Type} : tree A -> Prop :=
+| leaf_reachable_leaf : forall x, leaf_reachable (Leaf x)
+| leaf_reachable_choice1 : forall p t1 t2,
+    p == 0 ->
+    leaf_reachable t2 ->
+    leaf_reachable (Choice p t1 t2)
+| leaf_reachable_choice2 : forall p t1 t2,
+    p == 1 ->
+    leaf_reachable t1 ->
+    leaf_reachable (Choice p t1 t2)
+| leaf_reachable_choice3 : forall p t1 t2,
+    ~ p == 0 -> ~ p == 1 ->
+    (leaf_reachable t1 \/ leaf_reachable t2) ->
+    leaf_reachable (Choice p t1 t2)
+| leaf_reachable_fix : forall n t,
+    leaf_reachable t ->
+    leaf_reachable (Fix n t).
+
+Inductive leaf_reachable' {A : Type} : tree A -> Prop :=
+| leaf_reachable'_leaf : forall x, leaf_reachable' (Leaf x)
+| leaf_reachable'_choice1 : forall p t1 t2,
+    leaf_reachable' t1 ->
+    leaf_reachable' (Choice p t1 t2)
+| leaf_reachable'_choice2 : forall p t1 t2,
+    leaf_reachable' t2 ->
+    leaf_reachable' (Choice p t1 t2)
+| leaf_reachable'_fix : forall n t,
+    leaf_reachable' t ->
+    leaf_reachable' (Fix n t).
+
+Lemma leaf_reachable_leaf_reachable' {A : Type} (t : tree A) :
+  leaf_reachable t -> leaf_reachable' t.
+Proof.
+  induction t; simpl; intro H.
+  - constructor.
+  - inversion H.
+  - inversion H; subst.
+    + solve [constructor; auto].
+    + solve [constructor; auto].
+    + destruct H5; solve [constructor; auto].
+  - inversion H; subst; constructor; auto.
+Qed.
+
+Inductive no_leaf_reachable {A : Type} : tree A -> Prop :=
+| no_leaf_reachable_fail : forall n, no_leaf_reachable (Fail _ n)
+| no_leaf_reachable_choice1 : forall p t1 t2,
+    p == 0 ->
+    no_leaf_reachable t2 ->
+    no_leaf_reachable (Choice p t1 t2)
+| no_leaf_reachable_choice2 : forall p t1 t2,
+    p == 1 ->
+    no_leaf_reachable t1 ->
+    no_leaf_reachable (Choice p t1 t2)
+| no_leaf_reachable_choice3 : forall p t1 t2,
+    ~ p == 0 -> ~ p == 1 ->
+    no_leaf_reachable t1 ->
+    no_leaf_reachable t2 ->
+    no_leaf_reachable (Choice p t1 t2)
+| no_leaf_reachable_fix : forall n t,
+    no_leaf_reachable t ->
+    no_leaf_reachable (Fix n t).
+
+Fixpoint leaf_reachableb {A : Type} (t : tree A) : bool :=
+  match t with
+  | Leaf _ => true
+  | Fail _ _ => false
+  | Choice p t1 t2 => if Qeq_bool p 0 then
+                       leaf_reachableb t2 else
+                       if Qeq_bool p 1 then
+                         leaf_reachableb t1 else
+                         leaf_reachableb t1 || leaf_reachableb t2
+  | Fix _ t1 => leaf_reachableb t1
+  end.
+
+Lemma leaf_reachableb_spec {A : Type} (t : tree A)
+  : reflect (leaf_reachable t) (leaf_reachableb t).
+Proof.
+  induction t; simpl.
+  - repeat constructor.
+  - constructor; intro HC; inversion HC.
+  - destruct (Qeq_bool q 0) eqn:Hq0; simpl.
+    + apply Qeq_bool_eq in Hq0.
+      destruct IHt2 as [H | H]; constructor.
+      * apply leaf_reachable_choice1; auto.
+      * intro HC; inversion HC; subst; try congruence; lra.
+    + apply Qeq_bool_neq in Hq0.
+      destruct (Qeq_bool q 1) eqn:Hq1; simpl.
+      * apply Qeq_bool_eq in Hq1.
+        destruct IHt1 as [H | H]; constructor.
+        -- apply leaf_reachable_choice2; auto.
+        -- intro HC; inversion HC; subst; try congruence; lra.
+      * apply Qeq_bool_neq in Hq1.
+        destruct IHt1 as [H1 | H1]; destruct IHt2 as [H2 | H2]; simpl; constructor.
+        -- apply leaf_reachable_choice3; auto.
+        -- apply leaf_reachable_choice3; auto.
+        -- apply leaf_reachable_choice3; auto.
+        -- intro HC; inversion HC; subst; try congruence.
+           destruct H6; congruence.
+  - destruct IHt as [H | H]; constructor.
+    + constructor; auto.
+    + intro HC; inversion HC; congruence.
+Qed.
+
+Lemma not_leaf_reachable_no_leaf_reachable {A : Type} (t : tree A) :
+  ~ leaf_reachable t <-> no_leaf_reachable t.
+Proof.
+  split; induction t; simpl; intro H0.
+  - exfalso; apply H0; constructor.
+  - constructor.
+  - destruct (Qeq_bool q 0) eqn:Hq0.
+    + apply Qeq_bool_eq in Hq0; constructor; auto.
+      apply IHt2; intro HC; apply H0; constructor; auto.
+    + apply Qeq_bool_neq in Hq0.
+      destruct (Qeq_bool q 1) eqn:Hq1.
+      * apply Qeq_bool_eq in Hq1; apply no_leaf_reachable_choice2; auto.
+        apply IHt1; intro HC; apply H0; solve [constructor; auto].
+      * apply Qeq_bool_neq in Hq1.
+        apply no_leaf_reachable_choice3; auto.
+        -- apply IHt1; intro HC; apply H0; solve [constructor; auto].
+        -- apply IHt2; intro HC; apply H0; solve [constructor; auto].
+  - constructor; apply IHt; intro HC; apply H0; constructor; auto.
+  - inversion H0.
+  - intro HC; inversion HC.
+  - inversion H0; intro HC; inversion HC; subst; try lra.
+    + apply IHt2; auto.
+    + apply IHt1; auto.
+    + destruct H12.
+      * apply IHt1; auto.
+      * apply IHt2; auto.
+  - inversion H0; intro HC; inversion HC; subst; apply IHt; auto.
+Qed.
+
+Lemma leaf_reachable_dec {A : Type} (t : tree A)
+  : {leaf_reachable t} + {no_leaf_reachable t}.
+Proof.
+  destruct (leaf_reachableb_spec t); auto.
+  right; apply not_leaf_reachable_no_leaf_reachable; auto.
+Qed.
+
+Inductive fail_reachable {A : Type} (lbl : nat) : tree A -> Prop :=
+| fail_reachable_fail : fail_reachable lbl (Fail _ lbl)
+| fail_reachable_choice : forall p t1 t2,
+    (fail_reachable lbl t1 \/ fail_reachable lbl t2) ->
+    fail_reachable lbl (Choice p t1 t2)
+| fail_reachable_fix : forall n t,
+    fail_reachable lbl t ->
+    fail_reachable lbl (Fix n t).
+
+Inductive fail_reachable' {A : Type} (lbl : nat) : tree A -> Prop :=
+| fail_reachable'_fail : fail_reachable' lbl (Fail _ lbl)
+| fail_reachable'_choice1 : forall p t1 t2,
+    fail_reachable' lbl t1 ->
+    fail_reachable' lbl (Choice p t1 t2)
+| fail_reachable'_choice2 : forall p t1 t2,
+    fail_reachable' lbl t2 ->
+    fail_reachable' lbl (Choice p t1 t2)
+| fail_reachable'_fix : forall n t,
+    fail_reachable' lbl t ->
+    fail_reachable' lbl (Fix n t).
+
+Lemma fail_reachable_fail_reachable' {A : Type} (lbl : nat) (t : tree A) :
+  fail_reachable lbl t ->
+  fail_reachable' lbl t.
+Proof.
+  induction t; simpl; intro H; inversion H; subst; try solve[constructor; auto].
+  destruct H1; solve[constructor; auto].
+Qed.
+
+Inductive fail_not_reachable {A : Type} (lbl : nat) : tree A -> Prop :=
+| fail_not_reachable_leaf : forall x, fail_not_reachable lbl (Leaf x)
+| fail_not_reachable_fail : forall n, n <> lbl -> fail_not_reachable lbl (Fail _ n)
+| fail_not_reachable_choice : forall p t1 t2,
+    fail_not_reachable lbl t1 ->
+    fail_not_reachable lbl t2 ->
+    fail_not_reachable lbl (Choice p t1 t2)
+| fail_not_reachable_fix : forall n t,
+    fail_not_reachable lbl t ->
+    fail_not_reachable lbl (Fix n t).
+
+Fixpoint fail_reachableb {A : Type} (lbl : nat) (t : tree A) : bool :=
+  match t with
+  | Leaf _ => false
+  | Fail _ n => n =? lbl
+  | Choice p t1 t2 => fail_reachableb lbl t1 || fail_reachableb lbl t2
+  | Fix _ t1 => fail_reachableb lbl t1
+  end.
+
+Lemma fail_reachableb_spec {A : Type} (lbl : nat) (t : tree A)
+  : reflect (fail_reachable lbl t) (fail_reachableb lbl t).
+Proof.
+  induction t; simpl.
+  - constructor; intro HC; inversion HC.
+  - destruct (Nat.eqb_spec n lbl); subst; constructor.
+    + constructor.
+    + intro HC; inversion HC; subst; congruence.
+  - destruct IHt1 as [H1 | H1]; destruct IHt2 as [H2 | H2]; simpl; constructor.
+    + apply fail_reachable_choice; auto.
+    + apply fail_reachable_choice; auto.
+    + apply fail_reachable_choice; auto.
+    + intro HC; inversion HC; subst; try congruence.
+      destruct H0; congruence.
+  - destruct IHt as [H | H]; constructor.
+    + constructor; auto.
+    + intro HC; inversion HC; congruence.
+Qed.
+
+Lemma not_fail_reachable_fail_not_reachable {A : Type} (lbl : nat) (t : tree A) :
+  ~ fail_reachable lbl t <-> fail_not_reachable lbl t.
+Proof.
+  split; induction t; simpl; intro H0.
+  - constructor.
+  - destruct (Nat.eqb_spec lbl n); subst.
+    + exfalso; apply H0; constructor.
+    + constructor; auto.
+  - apply fail_not_reachable_choice; auto.
+    + apply IHt1; intro HC; apply H0; solve [constructor; auto].
+    + apply IHt2; intro HC; apply H0; solve [constructor; auto].
+  - constructor; apply IHt; intro HC; apply H0; constructor; auto.
+  - intro HC; inversion HC.
+  - destruct (Nat.eqb_spec lbl n); subst.
+    + inversion H0; congruence.
+    + intro HC; inversion HC; congruence.
+  - inversion H0; intro HC; inversion HC; subst; try lra.
+    destruct H6.
+    + apply IHt1; auto.
+    + apply IHt2; auto.
+  - inversion H0; intro HC; inversion HC; subst; apply IHt; auto.
+Qed.
+
+Lemma fail_reachable_dec {A : Type} (lbl : nat) (t : tree A)
+  : {fail_reachable lbl t} + {fail_not_reachable lbl t}.
+Proof.
+  destruct (fail_reachableb_spec lbl t); auto.
+  right; apply not_fail_reachable_fail_not_reachable; auto.
+Qed.
+
+Lemma free_in'_fail_not_reachable {A : Type} (lbl : nat) (t : tree A) :
+  free_in lbl t -> fail_reachable lbl t.
+Proof.
+  induction t; simpl; intro H0; inversion H0; subst.
+  - constructor.
+  - constructor; auto.
+  - solve [constructor; auto].
+  - constructor; auto.
+Qed.
+
+(* Assumes wf_tree'' (p is strictly between 0 and 1 at all choices). *)
+Inductive nondivergent' {A : Type} : list nat -> tree A -> Prop :=
+| nondivergent'_leaf : forall ls x, nondivergent' ls (Leaf x)
+| nondivergent'_fail : forall ls n, In n ls -> nondivergent' ls (Fail _ n)
+| nondivergent'_choice : forall ls p t1 t2,
+    nondivergent' ls t1 ->
+    nondivergent' ls t2 ->
+    nondivergent' ls (Choice p t1 t2)
+| nondivergent'_fix : forall ls n t,
+    (leaf_reachable t \/ exists m, In m ls /\ fail_reachable m t) ->
+    nondivergent' (n :: ls) t ->
+    nondivergent' ls (Fix n t).
+
+Definition nondivergent'' {A : Type} (n : nat) (t : tree A) : Prop :=
+  nondivergent' [] (Fix n t).
+
+Inductive divergent {A : Type} : list nat -> tree A -> Prop :=
+| divergent_fail : forall ls n, ~ In n ls -> divergent ls (Fail _ n)
+| divergent_choice : forall ls p t1 t2,
+    (divergent ls t1 \/ divergent ls t2) ->
+    divergent ls (Choice p t1 t2)
+| divergent_fix : forall ls n t,
+    (no_leaf_reachable t /\ forall m, In m ls -> fail_not_reachable m t) \/
+    divergent (n :: ls) t ->
+    divergent ls (Fix n t).
+
+Definition divergent' {A : Type} (n : nat) (t : tree A) : Prop :=
+  divergent [] (Fix n t).
+
+Fixpoint nondivergentb {A : Type} (ls : list nat) (t : tree A) : bool :=
+  match t with
+  | Leaf _ => true
+  | Fail _ n => existsb (Nat.eqb n) ls
+  | Choice p t1 t2 => nondivergentb ls t1 && nondivergentb ls t2
+  | Fix n t1 => (leaf_reachableb t1 ||
+                existsb (fun l => fail_reachableb l t1) ls) &&
+               nondivergentb (n :: ls) t1
+  end.
+
+Lemma nondivergentb_spec {A : Type} (ls : list nat) (t : tree A) :
+  reflect (nondivergent' ls t) (nondivergentb ls t).
+Proof.
+  revert ls.
+  induction t; intro ls; simpl.
+  - repeat constructor.
+  - destruct (existsb (Nat.eqb n) ls) eqn:Hexists; constructor.
+    + constructor; apply existsb_in; auto.
+    + intros HC; inversion HC; subst.
+      apply existsb_not_in in Hexists; contradiction.
+  - destruct (IHt1 ls) as [H1 | H1];
+      destruct (IHt2 ls) as [H2 | H2]; simpl; constructor.
+    + apply nondivergent'_choice; auto.
+    + intro HC; inversion HC; subst; congruence; lra.
+    + intro HC; inversion HC; subst; congruence; lra.
+    + intro HC; inversion HC; subst; congruence; lra.
+  - destruct (leaf_reachableb_spec t); subst; simpl.
+    + destruct (IHt (n :: ls)) as [H | H]; simpl; constructor.
+      * constructor; auto.
+      * intro HC; inversion HC; subst.
+        destruct H3 as [Hleaf | [m [Hin Hfail]]]; congruence.
+    + destruct (existsb (fun l => fail_reachableb l t) ls) eqn:Hexists; simpl.
+      * destruct (IHt (n :: ls)) as [H | H]; simpl; constructor.
+        -- constructor; auto.
+           right.
+           apply existsb_exists in Hexists.
+           destruct Hexists as [m [Hin Hfail]].
+           exists m; split; auto.
+           destruct (fail_reachableb_spec m t); subst; auto; congruence.
+        -- intro HC; inversion HC; subst.
+           destruct H3 as [Hleaf | [m [Hin Hfail]]]; congruence.
+      * constructor.
+        intros HC; inversion HC; subst.
+        destruct H2 as [Hleaf | [m [Hin Hfail]]].
+        -- congruence.
+        -- eapply existsb_false_forall in Hexists; eauto.
+           destruct (fail_reachableb_spec m t); subst; congruence.
+Qed.
+
+Lemma not_nondivergent'_divergent {A : Type} (ls : list nat) (t : tree A) :
+  ~ nondivergent' ls t <-> divergent ls t.
+Proof.
+  split; revert ls; induction t; simpl; intros ls H0.
+  - exfalso; apply H0; constructor.
+  - destruct (existsb (Nat.eqb n) ls) eqn:Hexists.
+    + apply existsb_in in Hexists.
+      exfalso; apply H0; constructor; auto.
+    + apply existsb_not_in in Hexists.
+      constructor; auto.
+  - apply divergent_choice; auto.
+    destruct (nondivergentb_spec ls t1).
+    + destruct (nondivergentb_spec ls t2).
+      * exfalso; apply H0; apply nondivergent'_choice; auto.
+      * right; apply IHt2; auto.
+    + left; apply IHt1; auto.
+  - constructor.
+    + destruct (nondivergentb_spec (n :: ls) t).
+      * left.
+        destruct (leaf_reachableb_spec t).
+        -- exfalso; apply H0; constructor; auto.
+        -- destruct (existsb (fun l => fail_reachableb l t) ls) eqn:Hexists.
+           ++ apply existsb_exists in Hexists.
+              destruct Hexists as [m [Hin Hfail]].
+              destruct (fail_reachableb_spec m t); try congruence.
+              exfalso; apply H0; constructor; auto.
+              right; exists m; auto.
+           ++ split.
+              ** apply not_leaf_reachable_no_leaf_reachable; auto.
+              ** intros m Hin.
+                 eapply existsb_false_forall in Hexists; eauto.
+                 destruct (fail_reachableb_spec m t); try congruence.
+                 apply not_fail_reachable_fail_not_reachable; auto.
+      * right; apply IHt; auto.
+  - inversion H0.
+  - destruct (existsb (Nat.eqb n) ls) eqn:Hexists.
+    + apply existsb_in in Hexists.
+      inversion H0; congruence.
+    + apply existsb_not_in in Hexists.
+      intro HC; inversion HC; congruence.
+  - inversion H0; intro HC; inversion HC; try congruence; try lra; subst.
+    + destruct H2 as [H | H].
+      * eapply IHt1; eauto.
+      * eapply IHt2; eauto.
+  - inversion H0; intro HC; inversion HC; subst.
+    destruct H2 as [[Hnoleaf Hnofail] | Hdiv].
+    + destruct H7 as [Hleaf | [m [Hin Hfail]]].
+      * apply not_leaf_reachable_no_leaf_reachable in Hnoleaf; congruence.
+      * apply Hnofail in Hin.
+        apply not_fail_reachable_fail_not_reachable in Hin; congruence.
+    + eapply IHt; eauto.
+Qed.
+
+Lemma nondivergent'_dec {A : Type} (ls : list nat) (t : tree A) :
+  {nondivergent' ls t} + {divergent ls t}.
+Proof.
+  destruct (nondivergentb_spec ls t); auto.
+  right; apply not_nondivergent'_divergent; auto.
+Qed.
+
+Lemma nondivergent''_dec {A : Type} (n : nat) (t : tree A) :
+  {nondivergent'' n t} + {divergent' n t}.
+Proof. apply nondivergent'_dec. Qed.
 
 Inductive unbiased {A : Type} : tree A -> Prop :=
 | unbiased_leaf : forall x, unbiased (Leaf x)
@@ -1145,6 +1377,15 @@ Inductive unbiased {A : Type} : tree A -> Prop :=
 | unbiased_fix : forall n t,
     unbiased t ->
     unbiased (Fix n t).
+
+Lemma unbiased_in_tree_leaf_reachable {A : Type} (t : tree A) (x : A) :
+  in_tree x t ->
+  unbiased t ->
+  leaf_reachable t.
+Proof.
+  induction 1; intro Hub; inversion Hub; subst;
+    solve[constructor; try lra; auto].
+Qed.
 
 Inductive no_fix {A : Type} : tree A -> Prop :=
 | no_fix_leaf : forall x, no_fix (Leaf x)
@@ -1207,6 +1448,23 @@ Inductive no_fail {A : Type} : tree A -> Prop :=
 | no_fail_fix : forall n t,
     no_fail t ->
     no_fail (Fix n t).
+
+Inductive has_fix {A : Type} : tree A -> Prop :=
+| has_fix_choice1 : forall p t1 t2,
+    p == 0 ->
+    has_fix t2 ->
+    has_fix (Choice p t1 t2)
+| has_fix_choice2 : forall p t1 t2,
+    p == 1 ->
+    has_fix t1 ->
+    has_fix (Choice p t1 t2)
+| has_fix_choice3 : forall p t1 t2,
+    ~ p == 0 -> ~ p == 1 ->
+    has_fix t1 ->
+    has_fix t2 ->
+    has_fix (Choice p t1 t2)
+| has_fix_fix : forall n t,
+    has_fix (Fix n t).
 
 Fixpoint heightb {A : Type} (t : tree A) : nat :=
   match t with
@@ -1557,3 +1815,62 @@ Qed.
 Lemma fold_tree_bind {A B : Type} (t : tree A) (k : A -> tree B) :
   join (fmap k t) = tree_bind t k.
 Proof. reflexivity. Qed.
+
+Inductive all_p {A : Type} : (Q -> Prop) -> tree A -> Prop :=
+| all_p_leaf : forall P x, all_p P (Leaf x)
+| all_p_fail : forall P n, all_p P (Fail _ n)
+| all_p_choice : forall (P : Q -> Prop) q t1 t2,
+    P q -> all_p P t1 -> all_p P t2 -> all_p P (Choice q t1 t2)
+| all_p_fix : forall P n t1, all_p P t1 -> all_p P (Fix n t1).
+
+Inductive some_p {A : Type} : (Q -> Prop) -> tree A -> Prop :=
+| some_p_choice_l : forall P q t1 t2, ~ P q -> some_p P t1 -> some_p P (Choice q t1 t2)
+| some_p_choice_r : forall P q t1 t2, ~ P q -> some_p P t2 -> some_p P (Choice q t1 t2)
+| some_p_choice_p : forall (P : Q -> Prop) q t1 t2, P q -> some_p P (Choice q t1 t2)
+| some_p_fix : forall P n t1, some_p P t1 -> some_p P (Fix n t1).
+
+Definition p_in {A : Type} (p : Q) (t : tree A) : Prop := some_p (fun q => q = p) t.
+
+Definition path : Type := list bool.
+
+Fixpoint path_subtree {A} (p : path) (t : tree A) : tree A :=
+  match (p, t) with
+  | (false :: p', Choice _ l _) => path_subtree p' l
+  | (true :: p', Choice _ _ r) => path_subtree p' r
+  | (_, Fix _ t') => path_subtree p t'
+  | _ => t
+  end.
+
+(* Definition upd {A} (f : nat -> option (tree A)) (m : nat) (t : tree A) (n : nat) : option (tree A) := *)
+(*   if n =? m then Some t else f n. *)
+
+(* Fixpoint sample_tree {A} (t : tree A) (f : nat -> option (tree A)) (bs : list bool) (n : nat) *)
+(*   : option A := *)
+(*   match n with *)
+(*   | O => None *)
+(*   | S n' => match t with *)
+(*            | Leaf x => Some x *)
+(*            | Fail _ m => match f m with *)
+(*                         | Some t' => sample_tree t' f bs n' *)
+(*                         | None => None *)
+(*                         end *)
+(*            | Choice p l r => match bs with *)
+(*                             | nil => None *)
+(*                             | false :: bs' => sample_tree l f bs' n' *)
+(*                             | true :: bs' => sample_tree r f bs' n' *)
+(*                             end *)
+(*            | Fix m t' => sample_tree t' (upd f m t') bs n' *)
+(*            end *)
+(*   end. *)
+
+(* Lemma divergent_subtree {A} (t : tree A) (lbl : nat) : *)
+(*   divergent' lbl t -> *)
+(*   exists p t', t' = path_subtree p t /\ *)
+(*           wf_tree t' /\ *)
+(*           no_leaf_reachable t' /\ *)
+(*           (forall m, not_free_in m t). *)
+(* Proof. *)
+(*   intro Hdiv. *)
+(*   unfold divergent' in Hdiv. *)
+(*   inversion Hdiv; subst. *)
+          

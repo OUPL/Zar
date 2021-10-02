@@ -32,6 +32,13 @@ Proof.
   destruct x; simpl; try lra; apply interval_measure_nonnegative.
 Qed.
 
+Lemma option_measure_None (x : option (list bool)) :
+  option_measure x == 0 -> x = None.
+Proof.
+  unfold option_measure; intro H.
+  destruct x; auto; exfalso; eapply interval_measure_nonzero; eauto.
+Qed.
+
 Lemma partial_sum_const (x : Q) (i : nat) :
   partial_sum (fun _ => x) i == sum_Q_list (repeat x i).
 Proof.
@@ -283,6 +290,17 @@ Lemma option_measure_product (x y : option (list bool)) :
   option_measure x * option_measure y.
 Proof.
   destruct x, y; simpl; try lra.
+  apply interval_measure_app.
+Qed.
+
+Lemma option_measure_homo s1 s2 i :
+  option_measure (seq_product MonoidList s1 s2 i) ==
+  option_measure (s1 (fst (nat_f i))) * option_measure (s2 (snd (nat_f i))).
+Proof.
+  unfold seq_product.
+  destruct (nat_f i).
+  unfold option_mult. simpl.
+  destruct (s1 n); destruct (s2 n0); simpl; try lra.
   apply interval_measure_app.
 Qed.
 
@@ -732,7 +750,7 @@ Proof.
   exists (filter (negb ∘ fun i => existsb (eqb i) l) (range (S (list_max l)))).
   etransitivity.
   apply Permutation_app_tail, Permutation_filter_existsb; auto.
-  apply Permutation_filter.
+  apply Permutation_filter_partition.
 Qed.
 
 Lemma list_rel_Qle_sup_ixs (l : list nat) (i : nat) (rows : nat -> nat -> Q) (sups : nat -> Q) :
@@ -1027,7 +1045,7 @@ Proof.
            unfold first_n'.
            rewrite <- map_app.
            apply Permutation_map.
-           apply Permutation_filter.
+           apply Permutation_filter_partition.
 Qed.
 
 Lemma supremum_le (s : nat -> Q) (c sup : Q) :
@@ -1122,7 +1140,7 @@ Proof.
   - unfold compose; simpl; intros _.
     apply const_supremum'.
     + intro i; unfold partial_sum; simpl; rewrite sum_Q_list_app; simpl.
-      assert (0 <= option_measure (singleton_seq [] i)).
+      assert (0 <= option_measure (seq_one [] i)).
       { apply option_measure_nonnegative. }
       lra.
     + exists (S O).
@@ -1176,7 +1194,7 @@ Qed.
 Lemma partial_sum_singleton_seq {A : Type} (f : option A -> Q) (x : A) (i : nat) :
   (1 <= i)%nat ->
   (f None == 0) ->
-  partial_sum (fun j => f (singleton_seq x j)) i == f (Some x).
+  partial_sum (fun j => f (seq_one x j)) i == f (Some x).
 Proof.
   intros Hle Hnone.
   induction i.

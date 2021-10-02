@@ -22,9 +22,6 @@ Definition real : Type := nat -> bool.
 Definition real_zero : real := const false.
 Definition real_one : real := const true.
 
-(* (** An open interval is represented by its real endpoints. *) *)
-(* Definition open : Type := real*real. *)
-
 (** Non-empty binary intervals. *)
 Definition interval : Type := list bool.
 
@@ -52,15 +49,6 @@ Fixpoint interval_intersection (u v : list bool) : option (interval) :=
       if eqb x y then Some (x :: zs) else None
     end
   end.
-
-(* Fixpoint interval_disjoint (a b : interval) : Prop := *)
-(*   match (a, b) with *)
-(*   | (None, _) => True *)
-(*   | (_, None) => True *)
-(*   | (Some [], _) => False *)
-(*   | (_, Some []) => False *)
-(*   | (Some (x :: xs), Some (y :: ys)) => interval_disjoint (Some xs) (Some ys) *)
-(*   end. *)
 
 Inductive comparable {A : Type} : list A -> list A -> Prop :=
 | comparable_nil1 : forall l2,
@@ -95,7 +83,7 @@ Proof.
 Qed.
 
 Lemma incomparable_not_comparable {A : Type} `{EqType A} (l1 l2 : list A) :
-  incomparable l1 l2 <-> not (comparable l1 l2).
+  incomparable l1 l2 <-> ~ comparable l1 l2.
 Proof.
   split.
   - induction 1; intro HC; inversion HC; subst; congruence.
@@ -120,14 +108,113 @@ Proof.
   - intros [Hpre | Hpre]; induction Hpre; constructor; auto.
 Qed.
 
-Definition interval_disjoint (a b : interval) : Prop := incomparable a b.
+Lemma incomparable_refl {A : Type} `{EqType A} (l : list A) :
+  ~ incomparable l l.
+Proof.
+  intro HC; apply incomparable_not_comparable in HC.
+  apply HC, is_prefix_comparable; left; reflexivity.
+Qed.
 
-(* Fixpoint interval_disjoint (a b : interval) : Prop := *)
-(*   match (a, b) with *)
-(*   | ([], _) => False *)
-(*   | (_, []) => False *)
-(*   | (x :: xs, y :: ys) => x <> y \/ interval_disjoint xs ys *)
-(*   end. *)
+Instance Symmetric_comparable {A : Type} : Symmetric (@comparable A).
+Proof. intros x y; induction 1; constructor; auto. Qed.
+
+Instance Symmetric_incomparable {A : Type} `{EqType A} : Symmetric (@incomparable A).
+Proof.
+  intros x y H0.
+  eapply incomparable_not_comparable.
+  eapply incomparable_not_comparable in H0.
+  intro HC; apply H0; symmetry; auto.
+Qed.
+
+Lemma incomparable_app_l {A : Type} (l1 l1' l2 l2' : list A) :
+  incomparable l1 l1' ->
+  incomparable (l1 ++ l2) (l1' ++ l2').
+Proof.
+  intro H.
+  revert l2 l2'.
+  induction H; intros l2 l2'.
+  - constructor; auto.
+  - simpl; right; auto.
+Qed.
+
+Lemma incomparable_app_r {A : Type} (l1 l2 l2' : list A) :
+  incomparable l2 l2' ->
+  incomparable (l1 ++ l2) (l1 ++ l2').
+Proof.
+  revert l2 l2'.
+  induction l1; simpl; intros l2 l2' H; auto.
+  right; auto.
+Qed.
+
+Lemma incomparable_app_l' {A : Type} (l l1 l2 : list A) :
+  incomparable l l1 ->
+  incomparable l (l1 ++ l2).
+Proof.
+  intro H.
+  replace l with (l ++ []) by apply app_nil_r.
+  apply incomparable_app_l; auto.
+Qed.
+
+Inductive lists_eq_or_incomparable {A : Type} : list (list A) -> list (list A) -> Prop :=
+| leoi_nil_l : forall ls, lists_eq_or_incomparable nil ls
+| leoi_nil_r : forall ls, lists_eq_or_incomparable ls nil
+| leoi_cons_eq : forall l ls1 ls2,
+    lists_eq_or_incomparable ls1 ls2 ->
+    lists_eq_or_incomparable (l :: ls1) (l :: ls2)
+| leoi_cons_incomparable : forall l1 l2 ls1 ls2,
+    incomparable l1 l2 ->
+    lists_eq_or_incomparable ls1 ls2 ->
+    lists_eq_or_incomparable (l1 :: ls1) (l2 :: ls2).
+
+Inductive lists_incomparable {A : Type} : list (list A) -> list (list A) -> Prop :=
+| lists_incomparable_head : forall l1 l2 ls1 ls2,
+    incomparable l1 l2 ->
+    lists_incomparable (l1 :: ls1) (l2 :: ls2)
+| lists_incomparable_tail : forall l ls1 ls2,
+    lists_incomparable ls1 ls2 ->
+    lists_incomparable (l :: ls1) (l :: ls2).
+
+Lemma lists_incomparable_app_l {A : Type} (a b c d : list (list A)) :
+  lists_incomparable a c ->
+  lists_incomparable (a ++ b) (c ++ d).
+Proof.
+  intro H; revert b d; induction H; intros b d.
+  - constructor; auto.
+  - right; auto.
+Qed.
+
+Lemma incomparable_concat {A : Type} `{EqType A} (l1 l2 : list A) (ls1 ls2 : list (list A)) :
+  lists_eq_or_incomparable ls1 ls2 ->
+  incomparable l1 l2 ->
+  (forall l, In l ls1 -> incomparable l l2) ->
+  (forall l, In l ls2 -> incomparable l l1) ->
+  incomparable (concat ls1 ++ l1) (concat ls2 ++ l2).
+Proof.
+  intro H0.
+  revert l1 l2.
+  induction H0; simpl; intros l1' l2' H0' H1' H2; auto.
+  - destruct ls; auto; simpl; rewrite <- app_assoc.
+    apply incomparable_app_l'.
+    symmetry; apply H2; left; reflexivity.
+  - destruct ls; auto; simpl; rewrite <- app_assoc.
+    symmetry; apply incomparable_app_l'; symmetry; apply H1'; left; reflexivity.
+  - rewrite <- 2!app_assoc.
+    apply incomparable_app_r.
+    apply IHlists_eq_or_incomparable; auto.
+  - rewrite <- 2!app_assoc.
+    apply incomparable_app_l; auto.
+Qed.
+
+Lemma lists_incomparable_concat {A : Type} (ls1 ls2 : list (list A)) :
+  lists_incomparable ls1 ls2 ->
+  incomparable (concat ls1) (concat ls2).
+Proof.
+  intro H0; induction H0.
+  - apply incomparable_app_l; auto.
+  - apply incomparable_app_r; auto.
+Qed.
+
+Definition interval_disjoint (a b : interval) : Prop := incomparable a b.
 
 Inductive disjoint : meas -> meas -> Prop :=
 | disjoint_empty_1 : forall U,
@@ -140,15 +227,6 @@ Inductive disjoint : meas -> meas -> Prop :=
 | disjoint_union : forall f g,
     (forall i j, disjoint (f i) (g j)) ->
     disjoint (meas_union f) (meas_union g).
-
-(* Fixpoint first_n {A : Type} (f : nat -> A) (n : nat) : list A := *)
-(*   match n with *)
-(*   | O => [] *)
-(*   | S n' => first_n f n' ++ [f n'] *)
-(*   end. *)
-
-(* Definition partial_sum (f : nat -> Q) (n : nat) : Q := *)
-(*   sum_Q_list (first_n f (S n)). *)
 
 Inductive partial_sumP (R : nat -> Q -> Prop) : nat -> Q -> Prop :=
 | partial_sumP_O : forall q,
@@ -167,22 +245,6 @@ Lemma fold_right_Qplus_app (l1 l2 : list Q) :
   fold_right Qplus 0 (l1 ++ l2) ==
   fold_right Qplus 0 l1 + fold_right Qplus 0 l2.
 Proof. induction l1; simpl; lra. Qed.
-
-(* Lemma partial_sum_spec (f : nat -> Q) (R : nat -> Q -> Prop) : *)
-(*   f_relation f R -> *)
-(*   Proper (eq ==> Qeq ==> iff) R -> *)
-(*   f_relation (partial_sum f) (partial_sumP R). *)
-(* Proof. *)
-(*   intros Hrel Hproper n. *)
-(*   induction n. *)
-(*   - unfold partial_sum. simpl. unfold compose. *)
-(*     constructor. *)
-(*     rewrite Qplus_0_r. apply Hrel. *)
-(*   - econstructor; eauto. *)
-(*     unfold partial_sum. simpl. *)
-(*     unfold sum_Q_list. *)
-(*     rewrite fold_right_Qplus_app; simpl; lra. *)
-(* Qed. *)
 
 (** The Borel measure of a measurable set. *)
 Inductive measure : meas -> Q -> Prop :=
@@ -235,13 +297,6 @@ Qed.
 Lemma real_in_intervalb_spec (r : real) (i : interval)
   : reflect (real_in_interval r i) (real_in_intervalb r i).
 Proof. apply real_in_intervalb_aux_spec. Qed.
-  
-(* Lemma real_in_interval_dec (r : real) (U : meas) : *)
-(*   real_in_interval r U \/ ~ real_in_interval r U. *)
-
-(* Lemma pred_dec {A : Type} (f : A -> bool) (x : A) : *)
-(*   f x = true \/ ~ f x = true. *)
-(* Proof. destruct (f x); auto. Qed. *)
 
 Lemma bool_dec (x : bool) :
   x = true \/ ~ x = true.
@@ -256,8 +311,7 @@ Fixpoint real_in_measb (U : meas) (r : real) : bool :=
   | meas_empty => false
   | meas_interval i => real_in_intervalb r i
   | meas_union f =>
-    if strong_LPO (fun n => real_in_measb (f n) r = true)
-                  (fun n => bool_sumbool (real_in_measb (f n) r))
+    if strong_LPO (fun n => bool_sumbool (real_in_measb (f n) r))
     then true else false
   end.
 
@@ -278,8 +332,8 @@ Proof.
     + constructor; auto.
     + intro HC. apply n.
       inversion HC; subst; auto.
-  - destruct (strong_LPO (fun n : nat => real_in_measb (m n) r = true)
-                         (fun n : nat => bool_sumbool (real_in_measb (m n) r))).
+  - destruct (strong_LPO (* (fun n : nat => real_in_measb (m n) r = true) *)
+                (fun n : nat => bool_sumbool (real_in_measb (m n) r))).
     + constructor; constructor.
       destruct e as [n Hn].
       exists n. destruct (H n); auto; congruence.
@@ -304,7 +358,7 @@ Inductive nth_element {A : Type} : nat -> list A -> A -> Prop :=
     nth_element n xs y ->
     nth_element (S n) (x :: xs) y.
 
-Lemma sdf {A : Type} (f : nat -> A) (l : list A) (x : A) :
+Lemma lt_length_nth_element {A : Type} (f : nat -> A) (l : list A) (x : A) :
   l <> nil ->
   (forall i, (i < length (x :: l))%nat -> nth_element i (x :: l) (f i)) ->
   forall i, (i < length l)%nat ->
@@ -339,12 +393,12 @@ Proof.
     assert (forall i, g i = r (i + n)%nat).
     { intro m. unfold g. unfold drop; auto. }
     assert (nth_element i (b :: bs) (g (S i))).
-    { apply sdf with (x := r n); auto.
+    { apply lt_length_nth_element with (x := r n); auto.
       intro HC; congruence. }
     auto.
 Qed.
 
-Lemma kdfg {A : Type} (i : nat) (l1 l2 : list A) (x : A) :
+Lemma lt_length_nth_element_app {A : Type} (i : nat) (l1 l2 : list A) (x : A) :
   (i < length l1)%nat ->
   nth_element i l1 x ->
   nth_element i (l1 ++ l2) x.
@@ -356,7 +410,7 @@ Proof.
     apply IHl1; auto; simpl in Hlt; lia.
 Qed.
 
-Lemma kdfgsdf {A : Type} (i : nat) (l1 l2 : list A) (x : A) :
+Lemma le_length_nth_element_app {A : Type} (i : nat) (l1 l2 : list A) (x : A) :
   (length l1 <= i)%nat ->
   nth_element (i - length l1) l2 x ->
   nth_element i (l1 ++ l2) x.
@@ -378,14 +432,14 @@ Proof.
   - inversion Hlt.
   - unfold slice in *. simpl in *.
     destruct (Nat.ltb_spec0 i m).
-    + apply kdfg. rewrite length_prefix; auto.
+    + apply lt_length_nth_element_app. rewrite length_prefix; auto.
       apply IHm. rewrite length_prefix; auto.
     + assert (i = m).
       { rewrite app_length in Hlt.
         rewrite length_prefix in Hlt. simpl in Hlt.
         lia. }
       subst.
-      apply kdfgsdf.
+      apply le_length_nth_element_app.
       rewrite length_prefix; lia.
       rewrite length_prefix.
       rewrite Nat.sub_diag.
@@ -514,17 +568,6 @@ Proof.
   - rewrite H, IHlist_rel; reflexivity.
 Qed.
 
-(* Lemma count_Q'_spec' {A : Type} (f : A -> bool) (xs : list A) : *)
-(*   count_QR (fun x => is_true (f x)) xs (count_Q' f xs). *)
-(* Proof. *)
-(*   induction xs; simpl. *)
-(*   - constructor; reflexivity. *)
-(*   - destruct (f a) eqn:Hfa. *)
-(*     + eapply count_QR_cons_true; eauto; field. *)
-(*     + constructor. congruence. *)
-(*       rewrite Qplus_0_l; auto. *)
-(* Qed. *)
-
 Lemma count_Q'_spec' {A : Type} (P : A -> Prop) (f : A -> bool) (xs : list A) :
   (forall x, reflect (P x) (f x)) ->
   count_QR P xs (count_Q' f xs).
@@ -538,7 +581,6 @@ Proof.
     + constructor. congruence.
       rewrite Qplus_0_l; auto.
 Qed.
-
 
 Definition rel_freq {A : Type} (f : A -> bool) (l : list A) : Q :=
   match l with
@@ -565,12 +607,6 @@ Proof.
         erewrite count_Q'_rel_eq. reflexivity.
         apply list_rel_prefix; auto.
 Qed.
-
-(* Definition rel_freq (U : meas) (rs : list real) : Q := *)
-(*   match rs with *)
-(*   | [] => 0 *)
-(*   | _ => count_Q' (real_in_measb U) rs / (Z.of_nat (length rs) # 1) *)
-(*   end. *)
 
 Definition rel_freq' (U : meas) (rs : list real) : Q :=
   rel_freq (real_in_measb U) rs.
@@ -628,70 +664,137 @@ Proof.
     + simpl; apply Q_neq_0; lia.
 Qed.
 
+(* (** Characterization of uniformity of a sequence of real numbers in *)
+(*     the unit interval. *) *)
+(* Definition uniform (reals : nat -> real) : Prop := *)
+(*   forall U : meas, *)
+(*   forall m : Q, *)
+(*     measure U m -> *)
+(*     forall eps : Q, *)
+(*       0 < eps -> *)
+(*       exists n, Qabs (m - rel_freq' U (prefix reals n)) < eps. *)
+
+(* (** Textbook definition that refers only to intervals. *) *)
+(* Definition uniform' (reals : nat -> real) : Prop := *)
+(*   forall I : interval, *)
+(*   forall eps : Q, *)
+(*     0 < eps -> *)
+(*     exists n, Qabs (interval_measure I - *)
+(*                rel_freq (fun r => real_in_intervalb r I) (prefix reals n)) < eps. *)
+
+(* Lemma uniform'_uniform (reals : nat -> real) : *)
+(*   uniform' reals -> uniform reals. *)
+(* Proof. *)
+(*   unfold uniform, uniform'. *)
+(*   intros H U. *)
+(*   revert H. revert reals. *)
+(*   induction U; intros reals H0 q Hq eps Hlt. *)
+(*   - inversion Hq; subst; exists O; rewrite H; simpl; auto. *)
+(*   - inversion Hq; subst. *)
+(*     specialize (H0 i eps Hlt). *)
+(*     destruct H0 as [n H0]. *)
+(*     exists n; rewrite H1; apply H0. *)
+(*   - inversion Hq; subst. *)
+(*     pose proof H0 as H'. *)
+(*     eapply H in H'. *)
+(*     2: { apply H3. } *)
+(*     2: { apply Hlt. } *)
+(*     (* TODO: somehow reduce to binary union case and then go by induction? *)     *)
+(*     unfold rel_freq. *)
+(*     unfold real_in_measb. *)
+(* Admitted. *)
+
 (** Characterization of uniformity of a sequence of real numbers in
-    the unit interval. *)
+    the unit interval (C-u.d.-1 where C is the class of countable
+    unions of intervals). *)
 Definition uniform (reals : nat -> real) : Prop :=
   forall U : meas,
   forall m : Q,
     measure U m ->
     forall eps : Q,
       0 < eps ->
-      exists n, Qabs (m - rel_freq' U (prefix reals n)) < eps.
+      exists n0, forall n,
+          (n0 <= n)%nat ->
+          Qabs (m - rel_freq' U (prefix reals n)) < eps.
 
+(** Textbook definition that refers only to intervals (uniform
+    distribution modulo 1). *)
 Definition uniform' (reals : nat -> real) : Prop :=
-  forall U : meas,
-  forall m : Q,
-    measure U m ->
-    forall eps : Q,
-      0 < eps ->
-      exists n, forall freq,
-          rel_freqR U (prefix reals n) freq ->
-          Qabs (m - freq) < eps.
+  forall I : interval,
+  forall eps : Q,
+    0 < eps ->
+    exists n0, forall n,
+        (n0 <= n)%nat ->
+        Qabs (interval_measure I -
+              rel_freq (fun r => real_in_intervalb r I) (prefix reals n)) < eps.
 
-Lemma uniform_equiv (reals : nat -> real) :
-  uniform reals <-> uniform' reals.
+Lemma count_Q'_false s :
+  count_Q' (fun _ : real => false) s == 0.
+Proof. induction s; simpl; lra. Qed.
+
+Lemma rel_freq'_meas_empty s :
+  rel_freq' meas_empty s == 0.
 Proof.
-  unfold uniform, uniform'.
-  split; intro H.
-  - intros U m Hm eps Heps.
-    specialize (H U m Hm eps Heps).
-    destruct H as [n H].
-    exists n. intros freq Hfreq.
-    assert (Heq: freq == rel_freq' U (prefix reals n)).
-    { eapply rel_freqR_deterministic; eauto.
-      apply rel_freq_spec. }
-    rewrite Heq; auto.
-  - intros U m Hm eps Heps.
-    specialize (H U m Hm eps Heps).
-    destruct H as [n H].
-    specialize (H (rel_freq' U (prefix reals n))
-                  (rel_freq_spec U (prefix reals n))).
-    exists n; auto.
+  unfold rel_freq', rel_freq.
+  destruct s; try lra.
+  rewrite count_Q'_false; reflexivity.
 Qed.
 
-(** TODO: show how the above assumption leads to a similar property of
-    the relative frequency of samples within some set P converging to
-    the measure of P which is by another theorem equal to the inferred
-    probability of P. *)
+Lemma uniform'_uniform (reals : nat -> real) :
+  uniform' reals -> uniform reals.
+Proof.
+  unfold uniform, uniform'.
+  intros H U.
+  revert H. revert reals.
+  induction U; intros reals H0 q Hq eps Hlt.
+  - inversion Hq; subst; exists O; intros n Hle; rewrite H.
+    rewrite rel_freq'_meas_empty; simpl; auto.
+  - inversion Hq; subst.
+    specialize (H0 i eps Hlt).
+    destruct H0 as [n0 H0].
+    exists n0; intros n Hle; rewrite H1; apply H0; auto.
+  - inversion Hq; subst.
+    pose proof H0 as H'.
+    eapply H in H'.
+    2: { apply H3. }
+    2: { apply Hlt. }
+    
+    
+    (* TODO: somehow reduce to binary union case and then go by induction? *)    
+    unfold rel_freq.
+    unfold real_in_measb.
+Admitted.
 
-(* Inductive measure : borel -> Q -> Prop := *)
-(* | measure_interval : forall i m, *)
-(*     m == interval_measure i -> *)
-(*     measure (borel_interval i) m *)
-(* | measure_union : forall u v a b c m, *)
-(*     measure u a -> *)
-(*     measure v b -> *)
-(*     measure (borel_intersection u v) c -> *)
-(*     m == a + b - c -> *)
-(*     measure (borel_union u v) m. *)
+(* Definition uniform' (reals : nat -> real) : Prop := *)
+(*   forall U : meas, *)
+(*   forall m : Q, *)
+(*     measure U m -> *)
+(*     forall eps : Q, *)
+(*       0 < eps -> *)
+(*       exists n, forall freq, *)
+(*           rel_freqR U (prefix reals n) freq -> *)
+(*           Qabs (m - freq) < eps. *)
 
-(* Fixpoint measure (b : borel) : Q := *)
-(*   match b with *)
-(*   | borel_interval i => interval_measure i *)
-(*   | borel_union u v => measure u + measure v - measure (borel_intersection u v) *)
-(*   | _ => 0 *)
-(*   end. *)
-
+(* Lemma uniform_equiv (reals : nat -> real) : *)
+(*   uniform reals <-> uniform' reals. *)
+(* Proof. *)
+(*   unfold uniform, uniform'. *)
+(*   split; intro H. *)
+(*   - intros U m Hm eps Heps. *)
+(*     specialize (H U m Hm eps Heps). *)
+(*     destruct H as [n H]. *)
+(*     exists n. intros freq Hfreq. *)
+(*     assert (Heq: freq == rel_freq' U (prefix reals n)). *)
+(*     { eapply rel_freqR_deterministic; eauto. *)
+(*       apply rel_freq_spec. } *)
+(*     rewrite Heq; auto. *)
+(*   - intros U m Hm eps Heps. *)
+(*     specialize (H U m Hm eps Heps). *)
+(*     destruct H as [n H]. *)
+(*     specialize (H (rel_freq' U (prefix reals n)) *)
+(*                   (rel_freq_spec U (prefix reals n))). *)
+(*     exists n; auto. *)
+(* Qed. *)
 
 Fixpoint positive_binary (p : positive) : list bool :=
   match p with
@@ -711,20 +814,6 @@ Definition nat_binary (n : nat) : list bool :=
 
 Eval compute in (nat_binary 4).
 
-(* Fixpoint strip_falses (bs : list bool) : list bool := *)
-(*   match bs with *)
-(*   | [] => [] *)
-(*   | x :: [false] => [x] *)
-(*   | x :: xs => x :: strip_falses xs *)
-(*   end. *)
-
-(* Fixpoint strip_falses (bs : list bool) : list bool := *)
-(*   match bs with *)
-(*   | [] => [] *)
-(*   | false :: [] => [] *)
-(*   | x :: xs => x :: strip_falses xs *)
-(*   end. *)
-
 Fixpoint strip_falses (bs : list bool) : list bool :=
   match bs with
   | [] => []
@@ -736,12 +825,12 @@ Fixpoint strip_falses (bs : list bool) : list bool :=
     end
   end.
 
-(** TODO: the natural numbers aren't actually in one-to-one
-correspondence with bit sequences, unless you only consider bit
-sequences with no leading zeros. So, we append a 1 to each bit
-sequence before sending it to nat. *)
+(** The natural numbers aren't actually in one-to-one correspondence
+with bit sequences, unless you only consider bit sequences with no
+leading zeros. So, we append a 1 to each bit sequence before sending
+it to nat. *)
 
-(** TODO: fix *)
+(** TODO: fix? *)
 Fixpoint binary_positive (bs : list bool) : positive :=
   match bs with
   | [] => xH (* invalid case *)
@@ -753,7 +842,6 @@ Fixpoint binary_positive (bs : list bool) : positive :=
 Definition binary_N_aux (bs : list bool) : N :=
   match bs with
   | [] => N0
-  (* | false :: [] => N0 *)
   | _ => Npos (binary_positive bs)
   end.
 
@@ -762,9 +850,6 @@ Definition binary_N (bs : list bool) : N :=
 
 Definition binary_nat (bs : list bool) : nat :=
   N.to_nat (binary_N bs).
-
-(* Definition nat_binary_inv (bs : list bool) : nat := *)
-(*   N.to_nat (Ascii.N_of_digits bs). *)
 
 Lemma strip_falses_idempotent (bs : list bool) :
   strip_falses (strip_falses bs) = strip_falses bs.
@@ -826,13 +911,6 @@ Proof.
   - simpl. rewrite IHno_leading_falses.
     destruct bs; auto.
 Qed.
-
-(* Lemma strip_falses_idempotent' (bs : list bool) : *)
-(*   strip_falses (strip_falses bs) = strip_falses bs. *)
-(* Proof. *)
-(*   apply no_leading_falses_strip_falses_noop. *)
-(*   apply no_leading_falses_strip_falses. *)
-(* Qed. *)
 
 Lemma positive_binary_non_nil (p : positive) :
   positive_binary p <> nil.
@@ -917,7 +995,6 @@ Proof.
   rewrite 2!binary_nat_nat_binary in H; auto.
 Qed.
 
-
 (** Real numbers r1 and r2 are equal up to the nth position, but
     differ at that position. *)
 Definition real_neq_at_n (r1 r2 : real) (n : nat) : Prop :=
@@ -971,13 +1048,15 @@ Lemma real_eq_at_n_dec (r1 r2 : real) (n : nat) :
 Proof. destruct (Bool.bool_dec (r1 n) (r2 n)); firstorder. Qed.
 
 Definition real_eqb (r1 r2 : real) : bool :=
-  match strong_LPO (real_neq_at_n r1 r2) (real_neq_at_n_dec r1 r2) with
+  match strong_LPO (* (real_neq_at_n r1 r2) *)
+                   (real_neq_at_n_dec r1 r2) with
   | left _ => false
   | right _ => true
   end.
 
 Definition real_ltb (r1 r2 : real) : bool :=
-  match strong_LPO (real_lt_at_n r1 r2) (real_lt_at_n_dec r1 r2) with
+  match strong_LPO (* (real_lt_at_n r1 r2) *)
+                   (real_lt_at_n_dec r1 r2) with
   | left _ => true
   | right _ => false
   end.
@@ -1001,30 +1080,21 @@ Proof.
   apply Qle_shift_div_l; auto; lra.
 Qed.
 
-(* Require Import FunctionalExtensionality. *)
+Lemma interval_measure_nonzero (bs : interval) :
+  ~ (interval_measure bs == 0).
+Proof.
+  unfold interval_measure.
+  intro HC.
+  assert (H: 0 == 0 / Qpow 2 (length bs)).
+  { rewrite Qdiv_0_num; reflexivity. }
+  rewrite H in HC; clear H.
+  assert (1 == 0).
+  { eapply Qdiv_num_inversion; eauto; apply Qpow_nonzero; lra. }
+  lra.
+Qed.
 
-(* Program Instance EqType_real : EqType real := *)
-(*   {| eqb := real_eqb |}. *)
-(* Next Obligation. *)
-(*   unfold real_eqb. *)
-(*   destruct (strong_LPO (real_neq_at_n x y) (real_neq_at_n_dec x y)). *)
-(*   - right. intro HC. *)
-(*     assert (forall i, x i = y i). *)
-(*     { rewrite HC; reflexivity. } *)
-(*     destruct e as [n [_ Hneq]]; congruence. *)
-(*   - left. *)
-(*     assert (forall n, ~ real_neq_at_n x y n). *)
-(*     { apply not_exists_forall_not; auto. } *)
-(*     unfold real_neq_at_n in H. *)
-(*     apply functional_extensionality; intro i. *)
-(*     specialize (H i). *)
-(*     admit. (* doable without classical axioms since things are decidable *) *)
-(* Admitted. *)
-
-
-(* Fixpoint prepend_bit (b : bool) (m : meas) : meas := *)
-  
-(* Inductive meas : Type := *)
-(* | meas_empty : meas *)
-(* | meas_interval : interval -> meas *)
-(* | meas_union : (nat -> meas) -> meas. *)
+Lemma interval_measure_positive (bs : interval) :
+  0 < interval_measure bs.
+Proof.
+  generalize (interval_measure_nonnegative bs), (@interval_measure_nonzero bs); lra.
+Qed.
